@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <title>Quest 360 VR - PoC Nivel 3</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        body { margin: 0; background-color: #000; font-family: monospace; }
+        /* El botón de VR se posiciona automáticamente abajo */
+    </style>
+</head>
+<body>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+        let camera, scene, renderer, sphere;
+
+        init();
+
+        function init() {
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Renderer con soporte XR
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Botón de Entrada Inmersiva
+            document.body.appendChild(VRButton.createButton(renderer));
+
+            // ESFERA 360 (Invertida)
+            const geometry = new THREE.SphereGeometry(500, 60, 40);
+            geometry.scale(-1, 1, 1); // El truco para ver hacia adentro
+
+            const textureLoader = new THREE.TextureLoader();
+            // Textura placeholder (Equirectangular)
+            const texture = textureLoader.load('https://threejs.org/examples/textures/2294472375_b9a84c0c3d_o.jpg', () => {
+                console.log("Textura cargada");
+            });
+            texture.colorSpace = THREE.SRGBColorSpace;
+
+            const material = new THREE.MeshBasicMaterial({ map: texture });
+            sphere = new THREE.Mesh(geometry, material);
+            scene.add(sphere);
+
+            // CONTROLADORES (Para ver tus manos en el Quest)
+            const controllerModelFactory = new XRControllerModelFactory();
+            
+            // Controlador 1
+            const controller1 = renderer.xr.getController(0);
+            scene.add(controller1);
+            const model1 = controllerModelFactory.createControllerModel(controller1);
+            controller1.add(model1);
+
+            // Controlador 2
+            const controller2 = renderer.xr.getController(1);
+            scene.add(controller2);
+            const model2 = controllerModelFactory.createControllerModel(controller2);
+            controller2.add(model2);
+
+            window.addEventListener('resize', onWindowResize);
+            
+            // Loop de renderizado XR
+            renderer.setAnimationLoop(render);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function render() {
+            // Rotación lenta si no estás en VR para testing en desktop
+            if (!renderer.xr.isPresenting) {
+                sphere.rotation.y += 0.001;
+            }
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
