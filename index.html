@@ -2,12 +2,13 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>SGX - Infinite Borikua ARchiVR (Pure VR)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SGX - Infinite Borikua Fully VR</title>
     <style>
         :root {
             --sgx-yellow: #FDCC0D;
             --sgx-blue: #32527B;
+            --sgx-copper: #B87333;
             --sgx-bg: #050505;
             --glass: rgba(20, 20, 20, 0.75);
         }
@@ -18,6 +19,7 @@
             background: var(--sgx-bg);
             font-family: 'Courier New', Courier, monospace;
             color: var(--sgx-yellow);
+            touch-action: none;
         }
 
         canvas { 
@@ -48,6 +50,9 @@
             width: 450px;
             max-width: 90%;
             box-shadow: 0 20px 50px rgba(0,0,0,0.9), 0 0 20px rgba(50, 82, 123, 0.4);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .sgx-panel h1 {
@@ -58,38 +63,63 @@
             color: #fff;
         }
 
-        /* Estilos inyectados al botón nativo de WebXR */
-        button.sgx-btn {
-            background: var(--sgx-yellow) !important; color: #000 !important;
-            border: none !important; padding: 18px !important; font-size: 1rem !important;
-            font-weight: 900 !important; font-family: inherit !important; cursor: pointer !important;
-            border-radius: 4px !important; text-transform: uppercase !important;
-            width: 100% !important; margin-top: 12px !important; transition: all 0.2s !important;
-            position: relative !important; left: auto !important; bottom: auto !important;
-            opacity: 1 !important; height: auto !important;
+        /* Hack de Arquitecto: Forzamos el botón de WebXR para que se vea como el tuyo */
+        #VRButton {
+            background: var(--sgx-yellow) !important; 
+            color: #000 !important;
+            border: none !important; 
+            padding: 18px !important; 
+            font-size: 1rem !important;
+            font-weight: 900 !important; 
+            font-family: inherit !important; 
+            cursor: pointer !important;
+            border-radius: 4px !important; 
+            text-transform: uppercase !important;
+            width: 100% !important; 
+            margin-top: 20px !important; 
+            transition: all 0.2s !important;
+            position: relative !important;
+            bottom: auto !important;
+            left: auto !important;
+            transform: none !important;
+            opacity: 1 !important;
         }
-        button.sgx-btn:hover { background: #fff !important; transform: translateY(-2px) !important; }
+        #VRButton:hover { background: #fff !important; transform: translateY(-2px) !important; }
 
+        .lil-gui { 
+            --background-color: rgba(20, 20, 20, 0.95);
+            --text-color: #eee;
+            --title-background-color: #111;
+            --widget-color: #333;
+            --hover-color: #444;
+            --focus-color: var(--sgx-yellow);
+            z-index: 100; 
+        }
+
+        .hidden-upload { display: none; }
     </style>
 
     <script type="importmap">
     {
         "imports": {
             "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/"
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
+            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm"
         }
     }
     </script>
 </head>
 <body>
 
+    <input type="file" id="local-image-upload" class="hidden-upload" accept="image/png, image/jpeg, image/webp">
+    
     <div id="scene-container"></div>
 
     <div id="ui-layer">
-        <div class="sgx-panel" id="main-panel">
+        <div class="sgx-panel" id="lobby-panel">
             <h1>INFINITE BORIKUA</h1>
-            <p style="color: #888; margin-bottom: 30px; font-size: 0.85rem;">
-                EXPERIENCIA VR INMERSIVA<br>
+            <p style="color: #888; margin-bottom: 10px; font-size: 0.85rem;">
+                GALERÍA VIRTUAL 360<br>
                 <span style="color: var(--sgx-blue);">SGX.Showcase Architecture</span>
             </p>
             </div>
@@ -97,14 +127,71 @@
 
     <script type="module">
         import * as THREE from 'three';
+        import GUI from 'lil-gui';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
         import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
-        // --- SISTEMA CORE ---
+        const isExported = window.IS_EXPORTED || false;
+
+        const patternTextures = {
+            'Base Verde': 'https://static.wixstatic.com/media/fe81a7_07aecfdb3b044909b0b267dfe7eecd96~mv2.png',
+            'Lx Musx': 'https://static.wixstatic.com/media/fe81a7_8e633cf8bcb3446d9b4cbe133dfcbce1~mv2.png',
+            'Roelephantom': 'https://static.wixstatic.com/media/fe81a7_92284537ab6d4d85b7f0143599e927a8~mv2.png',
+            'Roots Disorder': 'https://static.wixstatic.com/media/fe81a7_92284537ab6d4d85b7f0143599e927a8~mv2.png',
+            'Dark Cupcake': 'https://static.wixstatic.com/media/fe81a7_57282853d2e74770ba081e88b6fe01fa~mv2.png',
+            'The Highgineer': 'https://static.wixstatic.com/media/fe81a7_a5474248be1d408eb59d4a90872ecd2a~mv2.png',
+            'Kstillo': 'https://static.wixstatic.com/media/fe81a7_c2420b5aecb246ad9d3af8266aeebfd5~mv2.png'
+        };
+
+        const SGX = {
+            config: {
+                boxWidth: 26, boxHeight: 16, boxDepth: 26,
+                boxTextureUrl: patternTextures['Base Verde'],
+                textureScale: 0.15,
+                showGrids: true,
+                activeFrame: 0,
+                frameStyle: 'Neon Glow',
+                remoteImageUrl: 'https://static.wixstatic.com/media/fe81a7_52e1c777fa55462290827691e4b3d3b2~mv2.png',
+                
+                injectRemote: () => GalleryManager.injectTexture(SGX.config.activeFrame, SGX.config.remoteImageUrl),
+                uploadAction: () => document.getElementById('local-image-upload').click(),
+                resetFrames: () => GalleryManager.resetDefaultTextures(),
+                exportAction: () => exportGallery()
+            }
+        };
+
+        if (isExported && window.EXPORTED_CONFIG) {
+            Object.assign(SGX.config, window.EXPORTED_CONFIG);
+        }
+
+        function exportGallery() {
+            const configPayload = JSON.stringify({ ...SGX.config, frameUrls: GalleryManager.frames.map(f => f.url) });
+            const htmlClone = document.documentElement.cloneNode(true);
+            htmlClone.querySelectorAll('.lil-gui').forEach(el => el.remove());
+            htmlClone.querySelectorAll('script#export-config').forEach(el => el.remove());
+            
+            const script = document.createElement('script');
+            script.id = 'export-config';
+            script.textContent = `window.IS_EXPORTED = true; window.EXPORTED_CONFIG = ${configPayload};`;
+            htmlClone.querySelector('head').insertBefore(script, htmlClone.querySelector('head').firstChild);
+
+            const finalHTML = '<!DOCTYPE html>\n<html lang="es">\n' + htmlClone.innerHTML + '\n</html>';
+            const blob = new Blob([finalHTML], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "SGX_Infinite_Borikua_VR.html";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // --- CORE THREE.JS SETUP ---
         const scene = new THREE.Scene();
         scene.fog = new THREE.FogExp2(0x020202, 0.018);
         
-        // Contenedor de movilidad VR (Locomoción)
+        // 🏗️ EL RIG DE CÁMARA (Esencial para moverte sin alterar el tracking de tu cabeza real)
         const cameraGroup = new THREE.Group();
         scene.add(cameraGroup);
         const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -118,241 +205,342 @@
         renderer.xr.enabled = true;
         document.getElementById('scene-container').appendChild(renderer.domElement);
 
-        // --- HACK DEL UI: Botón nativo de WebXR con esteroides CSS ---
+        // Inyectar el botón dentro del panel SGX
         const vrBtn = VRButton.createButton(renderer);
-        vrBtn.classList.add('sgx-btn');
-        vrBtn.innerText = "ENTRAR A VR AHORA";
-        document.getElementById('main-panel').appendChild(vrBtn);
+        document.getElementById('lobby-panel').appendChild(vrBtn);
 
-        // Ocultar UI HTML al entrar a VR
+        // Eventos de sesión para manejar el UI
         renderer.xr.addEventListener('sessionstart', () => {
             document.getElementById('ui-layer').style.display = 'none';
         });
         renderer.xr.addEventListener('sessionend', () => {
             document.getElementById('ui-layer').style.display = 'flex';
+            cameraGroup.position.set(0,0,0);
+            cameraGroup.rotation.set(0,0,0);
         });
 
-        const amb = new THREE.AmbientLight(0xffffff, 0.6);
+        // Luces
+        const amb = new THREE.AmbientLight(0xffffff, 0.5);
         scene.add(amb);
-        const spot = new THREE.SpotLight(0xffffff, 1.5);
+        const spot = new THREE.SpotLight(0xffffff, 1.8);
         spot.position.set(0, 10, 5);
         spot.angle = Math.PI / 3;
+        spot.penumbra = 0.6;
+        spot.decay = 2;
+        spot.distance = 60;
         scene.add(spot);
 
-        // --- ARQUITECTURA DE INTERACCIÓN (Raycaster & Física) ---
-        const interactableObjects = [];
-        let raycaster = new THREE.Raycaster();
-        let tempMatrix = new THREE.Matrix4();
-        
-        const laserGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
-        const laserMat = new THREE.LineBasicMaterial({ color: 0xFDCC0D, transparent: true, opacity: 0.6 });
-
-        // Controladores (Manos Virtuales)
+        // --- CONTROLADORES VR ---
         const controllerModelFactory = new XRControllerModelFactory();
-        const controllers = [];
+        
+        // Controles visuales (Las manos/mandos)
+        const grip1 = renderer.xr.getControllerGrip(0);
+        grip1.add(controllerModelFactory.createControllerModel(grip1));
+        cameraGroup.add(grip1);
 
-        for(let i = 0; i < 2; i++) {
-            const controller = renderer.xr.getController(i);
-            controller.addEventListener('selectstart', onSelectStart);
-            scene.add(controller);
-            cameraGroup.add(controller); // Anclado al grupo de movimiento
+        const grip2 = renderer.xr.getControllerGrip(1);
+        grip2.add(controllerModelFactory.createControllerModel(grip2));
+        cameraGroup.add(grip2);
 
-            const controllerGrip = renderer.xr.getControllerGrip(i);
-            controllerGrip.add(controllerModelFactory.createControllerModel(controllerGrip));
-            cameraGroup.add(controllerGrip);
 
-            const laser = new THREE.Line(laserGeo, laserMat.clone());
-            laser.name = 'line';
-            laser.scale.z = 5; // Largo inicial del láser
-            controller.add(laser);
-            controllers.push(controller);
-        }
-
-        // --- OBJETO 3D INTERACTIVO (PRUEBA TÉCNICA) ---
-        const artifactGeo = new THREE.IcosahedronGeometry(0.8, 1);
-        const artifactMat = new THREE.MeshStandardMaterial({ color: 0x32527B, wireframe: true, emissive: 0x111111 });
-        const interactiveArtifact = new THREE.Mesh(artifactGeo, artifactMat);
-        interactiveArtifact.position.set(0, 1.5, -3); // En el centro, frente al usuario
-        scene.add(interactiveArtifact);
-        interactableObjects.push(interactiveArtifact);
-
-        // --- LÓGICA DE INTERACCIÓN ---
-        function getIntersections(controller) {
-            tempMatrix.identity().extractRotation(controller.matrixWorld);
-            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-            return raycaster.intersectObjects(interactableObjects, false);
-        }
-
-        function onSelectStart(event) {
-            const controller = event.target;
-            const intersections = getIntersections(controller);
-
-            if (intersections.length > 0) {
-                const object = intersections[0].object;
-                
-                // Efecto visual al gatillar
-                if(object === interactiveArtifact) {
-                    object.material.color.setHex(Math.random() * 0xffffff);
-                    object.scale.multiplyScalar(1.1);
-                    setTimeout(() => object.scale.set(1,1,1), 150);
-                }
-
-                // Inyección de Pulso Háptico (Dopamina Táctil)
-                const session = renderer.xr.getSession();
-                if (session && event.data && event.data.gamepad) {
-                    const hapticActuator = event.data.gamepad.hapticActuators?.[0];
-                    if (hapticActuator) {
-                        hapticActuator.pulse(1.0, 100); // Máxima fuerza, 100ms
-                    }
-                }
-            }
-        }
-
-        function updateRaycasters() {
-            controllers.forEach(controller => {
-                const line = controller.getObjectByName('line');
-                const intersections = getIntersections(controller);
-                if (intersections.length > 0) {
-                    line.scale.z = intersections[0].distance; // Acorta el láser hasta el impacto
-                } else {
-                    line.scale.z = 5;
-                }
-            });
-        }
-
-        // --- GALERÍA PARAMÉTRICA ---
+        // --- ENTORNO PARAMÉTRICO ---
         let roomGroup = new THREE.Group();
         scene.add(roomGroup);
+        let roomMesh, gridBottom, gridTop;
+        const boxTexLoader = new THREE.TextureLoader();
+        boxTexLoader.setCrossOrigin('anonymous');
+        let currentTexUrl = '';
+        let baseTex = null;
 
-        const config = { w: 26, h: 16, d: 26, wallTex: 'https://static.wixstatic.com/media/fe81a7_07aecfdb3b044909b0b267dfe7eecd96~mv2.png' };
-        
-        function initGallery() {
-            const tex = new THREE.TextureLoader().load(config.wallTex);
-            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-            tex.encoding = THREE.sRGBEncoding;
-
-            const roomGeo = new THREE.BoxGeometry(config.w, config.h, config.d);
-            const wallMat = (repeatU, repeatV) => {
-                const t = tex.clone(); t.repeat.set(-repeatU * 0.15, repeatV * 0.15); t.needsUpdate = true;
-                return new THREE.MeshStandardMaterial({ map: t, side: THREE.BackSide, roughness: 0.9, color: 0x555555 });
-            };
-            
-            const matX = wallMat(config.d, config.h);
-            const matY = wallMat(config.w, config.d);
-            const matZ = wallMat(config.w, config.h);
-            const roomMesh = new THREE.Mesh(roomGeo, [matX, matX, matY, matY, matZ, matZ]);
+        function initRoom() {
+            roomMesh = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), []);
             roomGroup.add(roomMesh);
-
-            const gridB = new THREE.GridHelper(Math.max(config.w, config.d), 25, 0x32527B, 0x111111);
-            gridB.position.y = -config.h / 2 + 0.05;
-            roomGroup.add(gridB);
-
-            buildFrames();
+            GalleryManager.buildFrames(SGX.config.boxWidth, SGX.config.boxHeight, SGX.config.boxDepth);
+            updateRoomDimensions(); 
         }
 
-        function buildFrames() {
-            const frameUrls = [
-                'https://static.wixstatic.com/media/fe81a7_b39d8b1fd26b4cf49a7636a787d5753e~mv2.png', 'https://static.wixstatic.com/media/fe81a7_8e633cf8bcb3446d9b4cbe133dfcbce1~mv2.png',
-                'https://static.wixstatic.com/media/fe81a7_92284537ab6d4d85b7f0143599e927a8~mv2.png', 'https://static.wixstatic.com/media/fe81a7_50a00e8777db48eaa8ccac45f762a408~mv2.png',
-                'https://static.wixstatic.com/media/fe81a7_57282853d2e74770ba081e88b6fe01fa~mv2.png', 'https://static.wixstatic.com/media/fe81a7_a5474248be1d408eb59d4a90872ecd2a~mv2.png',
-                'https://static.wixstatic.com/media/fe81a7_c2420b5aecb246ad9d3af8266aeebfd5~mv2.png', 'https://static.wixstatic.com/media/fe81a7_805b74a1b73d47fa83c446130585cd72~mv2.png',
-                'https://static.wixstatic.com/media/fe81a7_543abb3e04aa4488928129ccae33875a~mv2.png', 'https://static.wixstatic.com/media/fe81a7_cb6714af21974fe689652004d260cbc8~mv2.png',
-                'https://static.wixstatic.com/media/fe81a7_a0b0590dc0844d1b88d21763d52696c7~mv2.png', 'https://static.wixstatic.com/media/fe81a7_76f32d6280db4b508bec103ffd07bcd4~mv2.png',
-                'https://static.wixstatic.com/media/fe81a7_3640b51d386445ffa6f393c73785d8af~mv2.png', 'https://static.wixstatic.com/media/fe81a7_737e849b909c468998928172fa1ea821~mv2.png'
-            ];
+        function updateRoomDimensions() {
+            const { boxWidth: w, boxHeight: h, boxDepth: d, textureScale: tScale } = SGX.config;
+            
+            if (currentTexUrl !== SGX.config.boxTextureUrl) {
+                currentTexUrl = SGX.config.boxTextureUrl;
+                baseTex = boxTexLoader.load(currentTexUrl);
+                baseTex.wrapS = THREE.RepeatWrapping;
+                baseTex.wrapT = THREE.RepeatWrapping;
+                baseTex.encoding = THREE.sRGBEncoding;
+            }
 
-            const configs = [
-                { px: 0, py: 0, pz: -config.d/2 + 0.1, r: 0 },
-                { px: -config.w/2 + 0.1, py: config.h/5, pz: -config.d/3.2, r: Math.PI/2 }, { px: -config.w/2 + 0.1, py: config.h/5, pz: 0, r: Math.PI/2 }, { px: -config.w/2 + 0.1, py: config.h/5, pz: config.d/3.2, r: Math.PI/2 },
-                { px: -config.w/2 + 0.1, py: -config.h/5, pz: -config.d/3.2, r: Math.PI/2 }, { px: -config.w/2 + 0.1, py: -config.h/5, pz: 0, r: Math.PI/2 }, { px: -config.w/2 + 0.1, py: -config.h/5, pz: config.d/3.2, r: Math.PI/2 },
-                { px: config.w/2 - 0.1, py: config.h/5, pz: -config.d/3.2, r: -Math.PI/2 }, { px: config.w/2 - 0.1, py: config.h/5, pz: 0, r: -Math.PI/2 }, { px: config.w/2 - 0.1, py: config.h/5, pz: config.d/3.2, r: -Math.PI/2 },
-                { px: config.w/2 - 0.1, py: -config.h/5, pz: -config.d/3.2, r: -Math.PI/2 }, { px: config.w/2 - 0.1, py: -config.h/5, pz: 0, r: -Math.PI/2 }, { px: config.w/2 - 0.1, py: -config.h/5, pz: config.d/3.2, r: -Math.PI/2 },
-                { px: 0, py: 0, pz: config.d/2 - 0.1, r: Math.PI }
-            ];
+            roomMesh.geometry.dispose();
+            roomMesh.geometry = new THREE.BoxGeometry(w, h, d);
 
-            const tl = new THREE.TextureLoader();
-            frameUrls.forEach((url, i) => {
-                const h = (i === 0 || i === 13) ? 8 : 4.2;
-                const group = new THREE.Group();
-                const border = new THREE.Mesh(new THREE.BoxGeometry(h+0.4, h+0.4, 0.2), new THREE.MeshBasicMaterial({ color: 0xFDCC0D }));
-                const canvas = new THREE.Mesh(new THREE.PlaneGeometry(h, h), new THREE.MeshBasicMaterial({ color: 0x222222 }));
-                border.position.z = -0.15;
-                group.add(border); group.add(canvas);
-                
-                group.position.set(configs[i].px, configs[i].py, configs[i].pz);
-                group.rotation.y = configs[i].r;
-                scene.add(group);
-                
-                // Hacer el cuadro interactuable
-                interactableObjects.push(canvas);
-
-                tl.load(url, tex => {
-                    tex.encoding = THREE.sRGBEncoding;
-                    const aspect = tex.image.width / tex.image.height;
-                    canvas.geometry.dispose(); canvas.geometry = new THREE.PlaneGeometry(h * aspect, h);
-                    border.geometry.dispose(); border.geometry = new THREE.BoxGeometry((h * aspect)+0.4, h+0.4, 0.2);
-                    canvas.material.map = tex; canvas.material.color.setHex(0xffffff); canvas.material.needsUpdate = true;
+            const createWallMat = (repeatU, repeatV) => {
+                const tex = baseTex.clone();
+                tex.repeat.set(-repeatU * tScale, repeatV * tScale);
+                tex.needsUpdate = true;
+                return new THREE.MeshStandardMaterial({
+                    map: tex, color: 0x777777, side: THREE.BackSide, roughness: 0.9, metalness: 0.1
                 });
-            });
+            };
+
+            const matX = createWallMat(d, h); 
+            const matY = createWallMat(w, d); 
+            const matZ = createWallMat(w, h); 
+
+            if (roomMesh.material && roomMesh.material.length > 0) {
+                roomMesh.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+            }
+
+            roomMesh.material = [matX, matX, matY, matY, matZ, matZ];
+
+            if (gridBottom) { gridBottom.geometry.dispose(); roomGroup.remove(gridBottom); gridBottom = null; }
+            if (gridTop) { gridTop.geometry.dispose(); roomGroup.remove(gridTop); gridTop = null; }
+
+            if (SGX.config.showGrids) {
+                gridBottom = new THREE.GridHelper(Math.max(w, d), 25, 0x32527B, 0x111111);
+                gridBottom.position.y = -h / 2 + 0.05;
+                roomGroup.add(gridBottom);
+                
+                gridTop = new THREE.GridHelper(Math.max(w, d), 25, 0xFDCC0D, 0x111111);
+                gridTop.position.y = h / 2 - 0.05;
+                roomGroup.add(gridTop);
+            }
+
+            if (GalleryManager.frames.length > 0) GalleryManager.updateFramePositions(w, h, d);
         }
 
-        initGallery();
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.setCrossOrigin('anonymous');
+        
+        const GalleryManager = {
+            frames: [], wallTitles: [],
+            
+            createLabelMesh: function(text) {
+                if (!text) return null;
+                const canvas = document.createElement('canvas');
+                canvas.width = 1024; canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'rgba(10, 10, 10, 0.85)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.strokeStyle = '#32527B'; ctx.lineWidth = 12; ctx.strokeRect(0, 0, canvas.width, canvas.height);
+                ctx.font = 'bold 70px "Courier New", Courier, monospace';
+                ctx.fillStyle = '#FDCC0D'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+                return new THREE.Mesh(new THREE.PlaneGeometry(4, 1), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true }));
+            },
 
-        // --- SISTEMA DE LOCOMOCIÓN (JOYSTICKS) ---
+            createWallTitle: function(text) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 2048; canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'transparent'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.font = 'bold 120px "Courier New", Courier, monospace';
+                ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#FDCC0D'; ctx.shadowBlur = 20;
+                ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+                return new THREE.Mesh(new THREE.PlaneGeometry(18, 2.2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, side: THREE.DoubleSide }));
+            },
+
+            buildFrames: function(w, h, d) {
+                this.frames.forEach(f => { scene.remove(f.group); });
+                this.frames = [];
+                this.wallTitles.forEach(t => scene.remove(t));
+                this.wallTitles = [];
+
+                const titleLeft = this.createWallTitle("PATRONES"); titleLeft.rotation.y = Math.PI/2; scene.add(titleLeft); this.wallTitles.push(titleLeft);
+                const titleRight = this.createWallTitle("CONCEPTOS"); titleRight.rotation.y = -Math.PI/2; scene.add(titleRight); this.wallTitles.push(titleRight);
+                const titleCredits = this.createWallTitle("CRÉDITOS Y CREADORES"); titleCredits.rotation.y = Math.PI; scene.add(titleCredits); this.wallTitles.push(titleCredits);
+
+                const framesData = [
+                    { height: 8, label: '' }, { height: 4.2, label: 'Lx Musx' }, { height: 4.2, label: 'Roelephantom' }, 
+                    { height: 4.2, label: 'Roots Disorder' }, { height: 4.2, label: 'Dark Cupcake' }, { height: 4.2, label: 'The Highgineer' }, 
+                    { height: 4.2, label: 'Kstillo' }, { height: 4.2, label: 'Collar de Cemi' }, { height: 4.2, label: 'Pantallas' }, 
+                    { height: 4.2, label: 'Pulseras' }, { height: 4.2, label: 'The Highgineer/Kstillo' }, { height: 4.2, label: 'Lx Musx/Roelephantom' }, 
+                    { height: 4.2, label: 'Dark Cupcake/Roots Disorder' }, { height: 8, label: '' }
+                ];
+
+                framesData.forEach((data, index) => {
+                    const group = new THREE.Group();
+                    const canvasMesh = new THREE.Mesh(new THREE.PlaneGeometry(data.height, data.height), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+                    const borderMesh = new THREE.Mesh(new THREE.BoxGeometry(data.height + 0.4, data.height + 0.4, 0.2), this.getStyleMaterial());
+                    borderMesh.position.z = -0.15;
+
+                    group.add(borderMesh); group.add(canvasMesh);
+
+                    let labelMesh = null;
+                    if(data.label) {
+                        labelMesh = this.createLabelMesh(data.label);
+                        labelMesh.position.set(0, -(data.height / 2) - 0.7, 0);
+                        group.add(labelMesh);
+                    }
+                    
+                    if(index === 0) group.rotation.y = 0;
+                    else if(index >= 1 && index <= 6) group.rotation.y = Math.PI/2;
+                    else if(index >= 7 && index <= 12) group.rotation.y = -Math.PI/2;
+                    else group.rotation.y = Math.PI;
+                    
+                    scene.add(group);
+                    this.frames.push({ group, canvasMesh, borderMesh, labelMesh, height: data.height, url: '' });
+                });
+
+                this.resetDefaultTextures();
+            },
+
+            updateFramePositions: function(w, h, d) {
+                if(this.wallTitles.length >= 3) {
+                    this.wallTitles[0].position.set(-w/2 + 0.15, h/2 - 2, 0); 
+                    this.wallTitles[1].position.set(w/2 - 0.15, h/2 - 2, 0); 
+                    this.wallTitles[2].position.set(0, h/2 - 2, d/2 - 0.15); 
+                }
+
+                const frameConfigs = [
+                    { px: 0, py: 0, pz: -d/2 + 0.1 },
+                    { px: -w/2 + 0.1, py: h/5, pz: -d/3.2 }, { px: -w/2 + 0.1, py: h/5, pz: 0 }, { px: -w/2 + 0.1, py: h/5, pz: d/3.2 },
+                    { px: -w/2 + 0.1, py: -h/5, pz: -d/3.2 }, { px: -w/2 + 0.1, py: -h/5, pz: 0 }, { px: -w/2 + 0.1, py: -h/5, pz: d/3.2 },
+                    { px: w/2 - 0.1, py: h/5, pz: -d/3.2 }, { px: w/2 - 0.1, py: h/5, pz: 0 }, { px: w/2 - 0.1, py: h/5, pz: d/3.2 },
+                    { px: w/2 - 0.1, py: -h/5, pz: -d/3.2 }, { px: w/2 - 0.1, py: -h/5, pz: 0 }, { px: w/2 - 0.1, py: -h/5, pz: d/3.2 },
+                    { px: 0, py: 0, pz: d/2 - 0.1 }
+                ];
+
+                this.frames.forEach((f, i) => { if(frameConfigs[i]) f.group.position.set(frameConfigs[i].px, frameConfigs[i].py, frameConfigs[i].pz); });
+            },
+
+            getStyleMaterial: function() {
+                switch(SGX.config.frameStyle) {
+                    case 'Neon Glow': return new THREE.MeshBasicMaterial({ color: 0xFDCC0D });
+                    case 'Industrial Blue': return new THREE.MeshStandardMaterial({ color: 0x32527B, metalness: 0.8, roughness: 0.2 });
+                    case 'Minimalist White': return new THREE.MeshBasicMaterial({ color: 0xffffff });
+                    default: return new THREE.MeshBasicMaterial({ color: 0x444444 });
+                }
+            },
+
+            updateGlobalStyle: function() {
+                const newMat = this.getStyleMaterial();
+                this.frames.forEach(f => { f.borderMesh.material.dispose(); f.borderMesh.material = newMat; });
+            },
+
+            injectTexture: function(frameIndex, url) {
+                if(!this.frames[frameIndex]) return;
+                this.frames[frameIndex].url = url; 
+                textureLoader.load(url, (texture) => {
+                    texture.encoding = THREE.sRGBEncoding;
+                    const aspect = texture.image.width / texture.image.height;
+                    const canvasMesh = this.frames[frameIndex].canvasMesh;
+                    const borderMesh = this.frames[frameIndex].borderMesh;
+                    const targetH = this.frames[frameIndex].height;
+                    
+                    canvasMesh.geometry.dispose();
+                    canvasMesh.geometry = new THREE.PlaneGeometry(targetH * aspect, targetH);
+                    borderMesh.geometry.dispose();
+                    borderMesh.geometry = new THREE.BoxGeometry((targetH * aspect) + 0.4, targetH + 0.4, 0.2);
+                    canvasMesh.material.map = texture;
+                    canvasMesh.material.color.setHex(0xffffff);
+                    canvasMesh.material.needsUpdate = true;
+                });
+            },
+
+            resetDefaultTextures: function() {
+                if (isExported && SGX.config.frameUrls && SGX.config.frameUrls.length > 0) {
+                    this.frames.forEach((f, i) => { if (SGX.config.frameUrls[i]) this.injectTexture(i, SGX.config.frameUrls[i]); });
+                    return;
+                }
+                const defaultUrls = [
+                    'https://static.wixstatic.com/media/fe81a7_b39d8b1fd26b4cf49a7636a787d5753e~mv2.png', 'https://static.wixstatic.com/media/fe81a7_8e633cf8bcb3446d9b4cbe133dfcbce1~mv2.png',
+                    'https://static.wixstatic.com/media/fe81a7_92284537ab6d4d85b7f0143599e927a8~mv2.png', 'https://static.wixstatic.com/media/fe81a7_50a00e8777db48eaa8ccac45f762a408~mv2.png',
+                    'https://static.wixstatic.com/media/fe81a7_57282853d2e74770ba081e88b6fe01fa~mv2.png', 'https://static.wixstatic.com/media/fe81a7_a5474248be1d408eb59d4a90872ecd2a~mv2.png',
+                    'https://static.wixstatic.com/media/fe81a7_c2420b5aecb246ad9d3af8266aeebfd5~mv2.png', 'https://static.wixstatic.com/media/fe81a7_805b74a1b73d47fa83c446130585cd72~mv2.png',
+                    'https://static.wixstatic.com/media/fe81a7_543abb3e04aa4488928129ccae33875a~mv2.png', 'https://static.wixstatic.com/media/fe81a7_cb6714af21974fe689652004d260cbc8~mv2.png',
+                    'https://static.wixstatic.com/media/fe81a7_a0b0590dc0844d1b88d21763d52696c7~mv2.png', 'https://static.wixstatic.com/media/fe81a7_76f32d6280db4b508bec103ffd07bcd4~mv2.png',
+                    'https://static.wixstatic.com/media/fe81a7_3640b51d386445ffa6f393c73785d8af~mv2.png', 'https://static.wixstatic.com/media/fe81a7_737e849b909c468998928172fa1ea821~mv2.png'
+                ];
+                this.frames.forEach((f, i) => this.injectTexture(i, defaultUrls[i]));
+            }
+        };
+
+        initRoom();
+
+        // Subida de archivos local
+        document.getElementById('local-image-upload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) GalleryManager.injectTexture(SGX.config.activeFrame, URL.createObjectURL(file));
+        });
+
+        // GUI del Editor
+        function initGUI() {
+            if (isExported) return;
+            const gui = new GUI({ title: '⚙️ SGX ARCHITECT V4 - VR EDITION' });
+            
+            const galleryFolder = gui.addFolder('🖼️ Gallery Injection');
+            galleryFolder.add(SGX.config, 'activeFrame', { '0. Inicio': 0, '1. Patrones: Lx Musx': 1, '2. Patrones: Roelephantom': 2, '3. Patrones: Roots Disorder': 3, '4. Patrones: Dark Cupcake': 4, '5. Patrones: The Highgineer': 5, '6. Patrones: Kstillo': 6, '7. Conceptos: Collar Cemi': 7, '8. Conceptos: Pantallas': 8, '9. Conceptos: Pulseras': 9, '10. Conceptos: Wayuko TH/Ks': 10, '11. Conceptos: Wayuko LM/Ro': 11, '12. Conceptos: Wayuko DC/RD': 12, '13. Créditos': 13 }).name('Seleccionar Marco').onChange(v => SGX.config.activeFrame = parseInt(v));
+            galleryFolder.add(SGX.config, 'remoteImageUrl').name('URL de Imagen');
+            galleryFolder.add(SGX.config, 'injectRemote').name('🔗 Inyectar URL');
+            galleryFolder.add(SGX.config, 'uploadAction').name('⬆️ Subir Local');
+            galleryFolder.add(SGX.config, 'frameStyle', ['Neon Glow', 'Industrial Blue', 'Minimalist White', 'Dark Matter']).name('Estilo Marco').onChange(() => GalleryManager.updateGlobalStyle());
+            galleryFolder.add(SGX.config, 'resetFrames').name('↻ Reset Defaults');
+
+            const roomFolder = gui.addFolder('📐 Dimensiones y Entorno');
+            roomFolder.add(SGX.config, 'boxTextureUrl', patternTextures).name('Textura Paredes').onChange(updateRoomDimensions);
+            roomFolder.add(SGX.config, 'boxWidth', 10, 80).name('Ancho (Paredes L/R)').onChange(updateRoomDimensions);
+            roomFolder.add(SGX.config, 'boxHeight', 10, 40).name('Alto (Techo)').onChange(updateRoomDimensions);
+            roomFolder.add(SGX.config, 'boxDepth', 10, 80).name('Profundidad (Frente/Fondo)').onChange(updateRoomDimensions);
+
+            gui.add(SGX.config, 'exportAction').name('💾 Exportar Galería (Limpia)');
+            gui.open();
+        }
+        initGUI();
+
+
+        // --- MOTOR DE LOCOMOCIÓN (JOYSTICKS) ---
         const moveSpeed = 0.08;
         const turnSpeed = 0.04;
+        const deadzone = 0.1;
 
         function handleLocomotion() {
             const session = renderer.xr.getSession();
-            if (!session) return;
+            if (session && session.inputSources) {
+                for (const source of session.inputSources) {
+                    if (!source.gamepad) continue;
 
-            for (const source of session.inputSources) {
-                if (!source.gamepad) continue;
+                    const gamepad = source.gamepad;
+                    // En Meta Quest: Axes 2 es X (izq/der), Axes 3 es Y (arr/aba)
+                    const x = Math.abs(gamepad.axes[2]) > deadzone ? gamepad.axes[2] : 0;
+                    const y = Math.abs(gamepad.axes[3]) > deadzone ? gamepad.axes[3] : 0;
 
-                const axes = source.gamepad.axes;
-                // axes[2] es X (Izquierda/Derecha), axes[3] es Y (Adelante/Atrás) del joystick
+                    if (source.handedness === 'left') {
+                        // Movimiento Traslacional (Mano Izquierda)
+                        if (x !== 0 || y !== 0) {
+                            // Extraer dirección hacia donde mira el usuario
+                            const direction = new THREE.Vector3();
+                            camera.getWorldDirection(direction);
+                            direction.y = 0; // Para no volar al mirar arriba
+                            direction.normalize();
 
-                if (source.handedness === 'left') {
-                    // Moverse (Locomotion Smooth)
-                    const xAxis = axes[2];
-                    const yAxis = axes[3];
+                            // Calcular vector lateral (Strafe)
+                            const right = new THREE.Vector3();
+                            right.crossVectors(camera.up, direction).normalize();
 
-                    // Calcular el vector de dirección basado en adónde está mirando el usuario
-                    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-                    forward.y = 0; forward.normalize(); // Ignorar Y para no volar al mirar arriba
-                    
-                    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                    right.y = 0; right.normalize();
-
-                    // Aplicar vectores al CameraGroup
-                    if (Math.abs(yAxis) > 0.1) cameraGroup.position.add(forward.multiplyScalar(-yAxis * moveSpeed));
-                    if (Math.abs(xAxis) > 0.1) cameraGroup.position.add(right.multiplyScalar(xAxis * moveSpeed));
-                }
-
-                if (source.handedness === 'right') {
-                    // Rotar (Smooth Turn)
-                    const xAxis = axes[2];
-                    if (Math.abs(xAxis) > 0.1) {
-                        cameraGroup.rotation.y -= xAxis * turnSpeed;
+                            // Aplicar movimiento al Rig (cameraGroup)
+                            cameraGroup.position.addScaledVector(direction, -y * moveSpeed);
+                            cameraGroup.position.addScaledVector(right, -x * moveSpeed);
+                        }
+                    } else if (source.handedness === 'right') {
+                        // Rotación Smooth (Mano Derecha)
+                        if (x !== 0) {
+                            // Rotamos el Rig entero
+                            cameraGroup.rotation.y -= x * turnSpeed;
+                        }
                     }
                 }
             }
         }
 
-        // --- RENDER LOOP MAESTRO ---
-        renderer.setAnimationLoop(() => {
-            // Animación ambiental del artefacto
-            interactiveArtifact.rotation.x += 0.005;
-            interactiveArtifact.rotation.y += 0.01;
-
+        // --- RENDER LOOP ---
+        function render() {
             if (renderer.xr.isPresenting) {
                 handleLocomotion();
-                updateRaycasters();
             }
-
             renderer.render(scene, camera);
-        });
+        }
+        
+        renderer.setAnimationLoop(render);
         
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
