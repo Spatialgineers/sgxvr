@@ -1,97 +1,389 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <title>Quest 360 VR - PoC Nivel 3</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SGX - Infinite Borikua ARchiVR (Pure VR)</title>
     <style>
-        body { margin: 0; background-color: #000; font-family: monospace; }
-        /* El botón de VR se posiciona automáticamente abajo */
+        :root {
+            --sgx-yellow: #FDCC0D;
+            --sgx-blue: #32527B;
+            --sgx-bg: #050505;
+            --glass: rgba(20, 20, 20, 0.75);
+        }
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: var(--sgx-bg);
+            font-family: 'Courier New', Courier, monospace;
+            color: var(--sgx-yellow);
+        }
+
+        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+
+        /* Capa UI que desaparece al entrar a VR */
+        #ui-layer {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            background: rgba(5, 5, 5, 0.9);
+            backdrop-filter: blur(10px);
+            z-index: 50;
+            transition: opacity 0.6s ease, visibility 0.6s;
+        }
+
+        .sgx-panel {
+            background: var(--glass);
+            border: 1px solid var(--sgx-blue);
+            border-top: 4px solid var(--sgx-yellow);
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            width: 450px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.9), 0 0 20px rgba(50, 82, 123, 0.4);
+        }
+
+        .sgx-panel h1 {
+            margin: 0 0 10px 0; font-size: 2rem; letter-spacing: 4px; font-weight: 900; color: #fff;
+        }
+
+        button.sgx-btn {
+            background: var(--sgx-yellow); color: #000;
+            border: none; padding: 18px; font-size: 1rem;
+            font-weight: 900; font-family: inherit; cursor: pointer;
+            border-radius: 4px; text-transform: uppercase;
+            width: 100%; transition: all 0.2s;
+        }
+        button.sgx-btn:hover { background: #fff; transform: translateY(-2px); }
+
+        /* Ocultar botón nativo de Three.js */
+        #VRButton { display: none !important; }
+
+        .hidden-upload { display: none; }
+        .lil-gui { z-index: 100; position: absolute; top: 0; right: 0; }
     </style>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
+            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm"
+        }
+    }
+    </script>
 </head>
 <body>
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
-        }
-    </script>
+
+    <input type="file" id="local-image-upload" class="hidden-upload" accept="image/png, image/jpeg, image/webp">
+    
+    <div id="scene-container"></div>
+
+    <div id="ui-layer">
+        <div class="sgx-panel">
+            <h1>INFINITE BORIKUA</h1>
+            <p style="color: #888; margin-bottom: 30px; font-size: 0.85rem;">
+                GALERÍA VR NATIVA 6DoF<br>
+                <span style="color: var(--sgx-blue);">SGX.Showcase Architecture</span>
+            </p>
+            <button id="btn-enter-vr" class="sgx-btn">INICIAR ENLACE VR</button>
+        </div>
+    </div>
 
     <script type="module">
         import * as THREE from 'three';
+        import GUI from 'lil-gui';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
-        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
-        let camera, scene, renderer, sphere;
+        const isExported = window.IS_EXPORTED || false;
 
-        init();
+        const patternTextures = {
+            'Base Verde': 'https://static.wixstatic.com/media/fe81a7_07aecfdb3b044909b0b267dfe7eecd96~mv2.png',
+            'Lx Musx': 'https://static.wixstatic.com/media/fe81a7_8e633cf8bcb3446d9b4cbe133dfcbce1~mv2.png',
+            'Dark Cupcake': 'https://static.wixstatic.com/media/fe81a7_57282853d2e74770ba081e88b6fe01fa~mv2.png'
+        };
 
-        function init() {
-            scene = new THREE.Scene();
+        const SGX = {
+            config: {
+                boxWidth: 26, boxHeight: 16, boxDepth: 26,
+                boxTextureUrl: patternTextures['Base Verde'],
+                textureScale: 0.15, showGrids: true,
+                activeFrame: 0, frameStyle: 'Neon Glow',
+                uploadAction: () => document.getElementById('local-image-upload').click()
+            }
+        };
 
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-            
-            // Renderer con soporte XR
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true;
-            document.body.appendChild(renderer.domElement);
+        // --- MOTOR THREE.JS & WEBXR ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x020202, 0.018);
+        
+        // EL DOLLY (Mueve la cámara y los mandos a la vez)
+        const cameraGroup = new THREE.Group();
+        cameraGroup.position.set(0, 0, 8); // Punto de inicio
+        scene.add(cameraGroup);
 
-            // Botón de Entrada Inmersiva
-            document.body.appendChild(VRButton.createButton(renderer));
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        cameraGroup.add(camera);
 
-            // ESFERA 360 (Invertida)
-            const geometry = new THREE.SphereGeometry(500, 60, 40);
-            geometry.scale(-1, 1, 1); // El truco para ver hacia adentro
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        
+        renderer.xr.enabled = true;
+        document.getElementById('scene-container').appendChild(renderer.domElement);
+        
+        // Inyectamos el botón nativo de ThreeJS (Estará oculto por CSS)
+        document.body.appendChild(VRButton.createButton(renderer));
 
-            const textureLoader = new THREE.TextureLoader();
-            // Textura placeholder (Equirectangular)
-            const texture = textureLoader.load('https://threejs.org/examples/textures/2294472375_b9a84c0c3d_o.jpg', () => {
-                console.log("Textura cargada");
-            });
-            texture.colorSpace = THREE.SRGBColorSpace;
+        // Enlazar nuestro UI estético al gatillo del botón oculto
+        document.getElementById('btn-enter-vr').addEventListener('click', () => {
+            const vrBtn = document.getElementById('VRButton');
+            if (vrBtn) vrBtn.click();
+            document.getElementById('ui-layer').style.display = 'none';
+        });
 
-            const material = new THREE.MeshBasicMaterial({ map: texture });
-            sphere = new THREE.Mesh(geometry, material);
-            scene.add(sphere);
+        // Luces
+        const amb = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(amb);
+        const spot = new THREE.SpotLight(0xffffff, 1.5);
+        spot.position.set(0, 10, 5);
+        scene.add(spot);
 
-            // CONTROLADORES (Para ver tus manos en el Quest)
-            const controllerModelFactory = new XRControllerModelFactory();
-            
-            // Controlador 1
-            const controller1 = renderer.xr.getController(0);
-            scene.add(controller1);
-            const model1 = controllerModelFactory.createControllerModel(controller1);
-            controller1.add(model1);
+        // --- SISTEMA INTERACTIVO (RAYCASTING) ---
+        const interactables = []; // Aquí meteremos los cuadros y objetos
+        const raycaster = new THREE.Raycaster();
+        const tempMatrix = new THREE.Matrix4();
 
-            // Controlador 2
-            const controller2 = renderer.xr.getController(1);
-            scene.add(controller2);
-            const model2 = controllerModelFactory.createControllerModel(controller2);
-            controller2.add(model2);
+        // Material del Láser
+        const laserGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+        const laserMat = new THREE.LineBasicMaterial({ color: 0xFDCC0D, transparent: true, opacity: 0.8 });
 
-            window.addEventListener('resize', onWindowResize);
-            
-            // Loop de renderizado XR
-            renderer.setAnimationLoop(render);
+        function buildController(id) {
+            const controller = renderer.xr.getController(id);
+            controller.addEventListener('selectstart', onSelectStart);
+            controller.addEventListener('selectend', onSelectEnd);
+            cameraGroup.add(controller); // Añadido al Dolly para que se muevan contigo
+
+            const line = new THREE.Line(laserGeo, laserMat.clone());
+            line.name = 'line';
+            line.scale.z = 10;
+            controller.add(line);
+
+            return controller;
         }
 
-        function onWindowResize() {
+        const controller1 = buildController(0);
+        const controller2 = buildController(1);
+
+        // --- ARTEFACTO 3D INTERACTIVO CENTRAL ---
+        const coreGeo = new THREE.OctahedronGeometry(1.5, 0);
+        const coreMat = new THREE.MeshStandardMaterial({ color: 0x32527B, wireframe: true, emissive: 0x32527B, emissiveIntensity: 0.5 });
+        const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+        coreMesh.position.set(0, 0, 0);
+        scene.add(coreMesh);
+        interactables.push(coreMesh); // Hacemos que sea interactuable
+        let coreSpinSpeed = 0.005;
+
+        // --- LÓGICA DE GATILLO (INTERACCIÓN & HAPTICS) ---
+        function onSelectStart(event) {
+            const controller = event.target;
+            const intersections = getIntersections(controller);
+
+            if (intersections.length > 0) {
+                const object = intersections[0].object;
+                
+                // Si disparamos al Núcleo Central
+                if(object === coreMesh) {
+                    coreSpinSpeed = 0.1; // Se acelera
+                    object.material.emissive.setHex(0xFDCC0D); // Cambia a amarillo SGX
+                    
+                    // Pulso Háptico (Dopamina física)
+                    const session = renderer.xr.getSession();
+                    if (session && session.inputSources) {
+                        for (const source of session.inputSources) {
+                            if (source.handedness === (controller === controller1 ? 'right' : 'left')) {
+                                if (source.gamepad && source.gamepad.hapticActuators.length > 0) {
+                                    source.gamepad.hapticActuators[0].pulse(1.0, 150); // Fuerza máxima, 150ms
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function onSelectEnd(event) {
+            // Relajar el núcleo
+            coreSpinSpeed = 0.005;
+            coreMesh.material.emissive.setHex(0x32527B);
+        }
+
+        function getIntersections(controller) {
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            return raycaster.intersectObjects(interactables, false);
+        }
+
+        function renderHover(controller) {
+            const line = controller.getObjectByName('line');
+            const intersections = getIntersections(controller);
+
+            if (intersections.length > 0) {
+                const intersection = intersections[0];
+                line.scale.z = intersection.distance; // El láser se acorta al tocar algo
+                
+                // Efecto visual al tocar marcos
+                if(intersection.object !== coreMesh) {
+                    intersection.object.scale.set(1.02, 1.02, 1.02);
+                }
+            } else {
+                line.scale.z = 10;
+            }
+            
+            // Restablecer escalas suavemente si no apuntamos
+            interactables.forEach(obj => {
+                if(obj !== coreMesh && (!intersections.length || intersections[0].object !== obj)) {
+                    obj.scale.lerp(new THREE.Vector3(1,1,1), 0.1);
+                }
+            });
+        }
+
+
+        // --- GALLERY MANAGER (Mantenido intacto, inyectado al Raycaster) ---
+        let roomGroup = new THREE.Group();
+        scene.add(roomGroup);
+        let roomMesh;
+
+        const boxTexLoader = new THREE.TextureLoader();
+        boxTexLoader.setCrossOrigin('anonymous');
+        
+        function initRoom() {
+            roomMesh = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), []);
+            roomGroup.add(roomMesh);
+            GalleryManager.buildFrames(SGX.config.boxWidth, SGX.config.boxHeight, SGX.config.boxDepth);
+            updateRoomDimensions(); 
+        }
+
+        function updateRoomDimensions() {
+            const { boxWidth: w, boxHeight: h, boxDepth: d, textureScale: tScale } = SGX.config;
+            const baseTex = boxTexLoader.load(SGX.config.boxTextureUrl);
+            baseTex.wrapS = baseTex.wrapT = THREE.RepeatWrapping;
+
+            roomMesh.geometry.dispose();
+            roomMesh.geometry = new THREE.BoxGeometry(w, h, d);
+
+            const mat = (ru, rv) => {
+                const t = baseTex.clone(); t.repeat.set(-ru * tScale, rv * tScale); t.needsUpdate = true;
+                return new THREE.MeshStandardMaterial({ map: t, side: THREE.BackSide });
+            };
+            roomMesh.material = [mat(d,h), mat(d,h), mat(w,d), mat(w,d), mat(w,h), mat(w,h)];
+            GalleryManager.updatePositions(w, h, d);
+        }
+
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.setCrossOrigin('anonymous');
+
+        const GalleryManager = {
+            frames: [],
+            buildFrames: function(w, h, d) {
+                const framesData = [
+                    { px: 0, py: h/5, pz: -d/3 }, { px: -w/3, py: h/5, pz: -d/3 }, { px: w/3, py: h/5, pz: -d/3 },
+                    { px: 0, py: -h/5, pz: -d/3 } // Versión reducida para PoC. Puedes poner tu array original.
+                ];
+
+                framesData.forEach((pos, index) => {
+                    const group = new THREE.Group();
+                    const canvasMesh = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+                    const borderMesh = new THREE.Mesh(new THREE.BoxGeometry(4.4, 4.4, 0.2), new THREE.MeshBasicMaterial({ color: 0xFDCC0D }));
+                    borderMesh.position.z = -0.15;
+                    group.add(borderMesh); group.add(canvasMesh);
+                    
+                    // Añadimos el Canvas al raycaster para que reaccione al láser
+                    interactables.push(canvasMesh); 
+                    
+                    scene.add(group);
+                    this.frames.push({ group, canvasMesh, borderMesh, initPos: pos });
+                });
+                this.loadDefaults();
+            },
+            updatePositions: function(w, h, d) {
+                this.frames.forEach((f) => { f.group.position.set(f.initPos.px, f.initPos.py, f.initPos.pz); });
+            },
+            loadDefaults: function() {
+                const url = 'https://static.wixstatic.com/media/fe81a7_8e633cf8bcb3446d9b4cbe133dfcbce1~mv2.png';
+                this.frames.forEach(f => {
+                    textureLoader.load(url, tex => {
+                        f.canvasMesh.material.map = tex; f.canvasMesh.material.needsUpdate = true;
+                    });
+                });
+            }
+        };
+
+        initRoom();
+
+        // --- SISTEMA DE LOCOMOCIÓN (JOYSTICKS) ---
+        const moveSpeed = 0.08;
+        const rotateSpeed = 0.04;
+        const deadzone = 0.15;
+
+        function handleLocomotion() {
+            const session = renderer.xr.getSession();
+            if (!session || !session.inputSources) return;
+
+            for (const source of session.inputSources) {
+                if (!source.gamepad) continue;
+                const axes = source.gamepad.axes; // [0,1,2,3] -> 2=X, 3=Y en Quest
+
+                // Mano Izquierda: MOVIMIENTO LINEAL
+                if (source.handedness === 'left') {
+                    if (Math.abs(axes[2]) > deadzone || Math.abs(axes[3]) > deadzone) {
+                        // Calcular hacia dónde mira el headset en el eje Y
+                        const cameraRot = new THREE.Quaternion();
+                        camera.getWorldQuaternion(cameraRot);
+                        const euler = new THREE.Euler().setFromQuaternion(cameraRot, 'YXZ');
+
+                        // Vector de movimiento basado en joystick
+                        const moveDir = new THREE.Vector3(axes[2], 0, axes[3]);
+                        moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), euler.y); // Alinear rotación
+                        moveDir.normalize().multiplyScalar(moveSpeed);
+                        
+                        cameraGroup.position.add(moveDir);
+                    }
+                } 
+                // Mano Derecha: ROTACIÓN (Smooth Turn)
+                else if (source.handedness === 'right') {
+                    if (Math.abs(axes[2]) > deadzone) {
+                        // Rotamos el Dolly entero
+                        cameraGroup.rotation.y -= axes[2] * rotateSpeed;
+                    }
+                }
+            }
+        }
+
+        // --- BUCLE DE RENDER (100% VR CONTROLLED) ---
+        renderer.setAnimationLoop(() => {
+            // Animación constante del núcleo
+            coreMesh.rotation.y += coreSpinSpeed;
+            coreMesh.rotation.x += coreSpinSpeed * 0.5;
+
+            if (renderer.xr.isPresenting) {
+                handleLocomotion(); // Chequea joysticks
+                renderHover(controller1); // Chequea láser mano izq
+                renderHover(controller2); // Chequea láser mano der
+            }
+
+            renderer.render(scene, camera);
+        });
+
+        window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function render() {
-            // Rotación lenta si no estás en VR para testing en desktop
-            if (!renderer.xr.isPresenting) {
-                sphere.rotation.y += 0.001;
-            }
-            renderer.render(scene, camera);
-        }
+        });
     </script>
 </body>
 </html>
