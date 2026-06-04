@@ -178,7 +178,7 @@
                 loadedModel.position.z += (loadedModel.position.z - center.z);
 
                 // Scale to perfectly fit the ~0.8m floating area
-                const scale = 0.8 / size; 
+                const scale = 1.2 / size; 
                 loadedModel.scale.set(scale, scale, scale);
 
                 productGroup.add(loadedModel);
@@ -323,6 +323,49 @@
         const raycaster = new THREE.Raycaster();
         const tempMatrix = new THREE.Matrix4();
 
+        // --- DESKTOP/TOUCH FALLBACK RAYCASTING ---
+        const mouse = new THREE.Vector2();
+        const mouseRaycaster = new THREE.Raycaster();
+
+        window.addEventListener('pointermove', (event) => {
+            // Ignorar si estamos en VR o si no estamos en la pantalla inicial
+            if (renderer.xr.isPresenting || uiState !== 'IDLE') return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            mouseRaycaster.setFromCamera(mouse, camera);
+            const intersects = mouseRaycaster.intersectObject(uiMesh);
+
+            const currentlyHovered = intersects.length > 0;
+
+            if (currentlyHovered && !isHovered) {
+                isHovered = true;
+                generateUITexture(uiState, isHovered);
+                document.body.style.cursor = 'pointer'; // Cambiar cursor para UX 2D
+            } else if (!currentlyHovered && isHovered) {
+                isHovered = false;
+                generateUITexture(uiState, isHovered);
+                document.body.style.cursor = 'default';
+            }
+        });
+
+        window.addEventListener('pointerdown', (event) => {
+            // Ignorar si estamos en VR o si no estamos en la pantalla inicial
+            if (renderer.xr.isPresenting || uiState !== 'IDLE') return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            mouseRaycaster.setFromCamera(mouse, camera);
+            const intersects = mouseRaycaster.intersectObject(uiMesh);
+
+            if (intersects.length > 0) {
+                processPurchase();
+            }
+        });
+        // --- FIN FALLBACK ---
+
         function onSelectStart(event) {
             if (isHovered && uiState === 'IDLE') {
                 processPurchase();
@@ -340,7 +383,7 @@
 
                 // Redirect trigger
                 setTimeout(() => {
-                    window.top.location.href = 'https://spatialgineers.com';
+                    window.open('https://spatialgineers.com', '_blank');
                 }, 3000);
 
             }, 2500);
