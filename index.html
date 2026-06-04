@@ -1,371 +1,407 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SGX Photobooth Sandbox - Kiosk Compiler</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>SGX V-Commerce Sandbox</title>
     <style>
-        body { margin: 0; background: #0a0a0a; color: #fff; font-family: monospace; display: flex; height: 100vh; overflow: hidden; }
-        #canvas-container { flex: 1; position: relative; background: #000; display: flex; justify-content: center; align-items: center; }
-        
-        #input_video { position: absolute; opacity: 0; pointer-events: none; z-index: -10; }
-        canvas { max-width: 100%; max-height: 100%; object-fit: contain; touch-action: none; cursor: grab; }
-        canvas:active { cursor: grabbing; }
-        
-        /* SGX UI Panel */
-        #ui-panel { width: 400px; background: #111; border-left: 2px solid #FDCC0D; display: flex; flex-direction: column; z-index: 10; }
-        .panel-header { padding: 20px; background: #1a1a1a; border-bottom: 1px solid #333; }
-        .panel-content { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 15px; }
-        
-        .sgx-btn { background: #FDCC0D; color: #000; border: none; padding: 10px; font-weight: bold; cursor: pointer; text-transform: uppercase; width: 100%; margin-bottom: 5px; transition: 0.2s; }
-        .sgx-btn:hover { background: #fff; }
-        .sgx-btn.build { background: #00ffcc; color: #000; margin-top: 10px; font-size: 16px; border: 2px solid #fff; }
-        input[type="text"] { background: #222; border: 1px solid #444; color: #FDCC0D; padding: 10px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
-        
-        /* Layer Styles */
-        .layer-card { background: #222; border: 1px solid #333; padding: 10px; border-left: 4px solid #FDCC0D; margin-bottom: 10px; }
-        .layer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: bold; }
-        .layer-controls { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; font-size: 12px; }
-        input[type="range"] { width: 100%; cursor: pointer; accent-color: #FDCC0D; }
-        .order-btns button { background: #444; color: white; border: none; padding: 4px 8px; cursor: pointer; }
-        .order-btns button:hover { background: #FDCC0D; color: black; }
-        .del-btn { background: #ff3333; color: white; border: none; padding: 4px 8px; cursor: pointer; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #050505;
+            font-family: 'Courier New', monospace;
+            color: #FDCC0D;
+            touch-action: none;
+        }
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            pointer-events: none;
+            border-left: 4px solid #00FFFF;
+            padding-left: 15px;
+            background: rgba(5, 5, 5, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 15px;
+            clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
+        }
+        h2 {
+            margin: 0 0 5px 0;
+            font-size: 1.5rem;
+            color: #ffffff;
+            letter-spacing: 2px;
+        }
+        p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #32527B;
+            font-weight: bold;
+        }
+        .blink {
+            animation: blinker 1.5s linear infinite;
+        }
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+        /* Style VR Button to match SGX Brand */
+        #VRButton {
+            background: rgba(50, 82, 123, 0.8) !important;
+            border: 1px solid #00FFFF !important;
+            color: #00FFFF !important;
+            font-family: 'Courier New', monospace !important;
+            font-weight: bold !important;
+            text-transform: uppercase !important;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3) !important;
+        }
     </style>
 </head>
 <body>
-
-    <div id="canvas-container">
-        <video id="input_video" autoplay playsinline></video>
-        <canvas id="output_canvas"></canvas>
+    <div id="hud">
+        <h2>SGX V-COMMERCE</h2>
+        <p>POWERED BY SPATIALGINEERS</p>
+        <p id="status-text" class="blink" style="color: #00FFFF; margin-top: 10px;">> DOWNLOADING 3D ASSETS...</p>
     </div>
 
-    <div id="ui-panel">
-        <div class="panel-header">
-            <h2 style="margin:0; color:#FDCC0D;">SGX.FrameBuilder</h2>
-        </div>
-        <div class="panel-content">
-            <div>
-                <input type="text" id="imgUrl" placeholder="URL de la imagen (Wix, Drive...)">
-                <button class="sgx-btn" onclick="addLayer()">+ Inyectar Asset</button>
-            </div>
-
-            <button class="sgx-btn build" onclick="buildKioskApp()">🚀 EXPORTAR APP FINAL</button>
-            <div style="font-size: 11px; color: #888; text-align: center;">Genera el HTML limpio con el filtro programado.</div>
-
-            <hr style="border-color: #333; width: 100%;">
-            <div id="layers-container"></div>
-        </div>
-    </div>
-
-    <script>
-        // --- 1. SETUP THREE.JS (EDITOR MODE) ---
-        const canvas = document.getElementById('output_canvas');
-        const renderer = new THREE.WebGLRenderer({ canvas: canvas, preserveDrawingBuffer: true, alpha: true });
-        renderer.setSize(450, 800); 
-        
-        const scene = new THREE.Scene();
-        const viewSize = 100;
-        const aspect = 450 / 800;
-        const camera = new THREE.OrthographicCamera(-viewSize*aspect, viewSize*aspect, viewSize, -viewSize, 0.1, 1000);
-        camera.position.z = 10;
-
-        // --- 2. CÁMARA (BACKGROUND) ---
-        const videoElement = document.getElementById('input_video');
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-            .then(stream => { videoElement.srcObject = stream; videoElement.play(); })
-            .catch(err => console.error("Error de cámara:", err));
-
-        const videoTexture = new THREE.VideoTexture(videoElement);
-        videoTexture.center.set(0.5, 0.5);
-        videoTexture.repeat.set(-1, 1); 
-        scene.background = videoTexture;
-
-        // --- 3. SISTEMA DE CAPAS ---
-        let layers = []; 
-        let meshGroup = new THREE.Group();
-        scene.add(meshGroup);
-
-        function addLayer() {
-            const url = document.getElementById('imgUrl').value;
-            if (!url) return;
-
-            const loader = new THREE.TextureLoader();
-            loader.setCrossOrigin('anonymous'); 
-            
-            loader.load(url, (texture) => {
-                const imgAspect = texture.image.width / texture.image.height;
-                const baseWidth = viewSize * aspect * 1.5; 
-                
-                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false });
-                const geometry = new THREE.PlaneGeometry(baseWidth, baseWidth / imgAspect);
-                const mesh = new THREE.Mesh(geometry, material);
-                
-                meshGroup.add(mesh);
-
-                const layerData = {
-                    id: Date.now(),
-                    url: url, // Guardamos URL intacto para la serialización del Build
-                    mesh: mesh,
-                    scale: 1,
-                    baseWidth: baseWidth,
-                    imgAspect: imgAspect
-                };
-                
-                layers.push(layerData);
-                updateRenderOrder();
-                renderUI();
-                document.getElementById('imgUrl').value = '';
-            });
-        }
-
-        function updateRenderOrder() {
-            layers.forEach((layer, index) => {
-                layer.mesh.renderOrder = index; 
-                layer.mesh.position.z = index * 0.1; 
-            });
-        }
-
-        function removeLayer(index) {
-            meshGroup.remove(layers[index].mesh);
-            layers[index].mesh.geometry.dispose();
-            layers[index].mesh.material.dispose();
-            layers.splice(index, 1);
-            updateRenderOrder();
-            renderUI();
-        }
-
-        function moveLayer(index, direction) {
-            if (direction === -1 && index > 0) {
-                [layers[index], layers[index - 1]] = [layers[index - 1], layers[index]];
-            } else if (direction === 1 && index < layers.length - 1) {
-                [layers[index], layers[index + 1]] = [layers[index + 1], layers[index]];
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
             }
-            updateRenderOrder();
-            renderUI();
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+        import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+        import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+        // --- 1. CORE ARCHITECTURE & RENDERER ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505);
+        scene.fog = new THREE.FogExp2(0x050505, 0.04);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.6, 3.5); // Average human height
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.xr.enabled = true; // ENABLING WEBXR
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(renderer.domElement);
+
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        // Controls for desktop preview before entering VR
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 1.4, -1.5);
+        controls.update();
+
+        // --- 2. LIGHTING & PBR ENVIRONMENT (SGX AESTHETIC) ---
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+        
+        scene.add(new THREE.AmbientLight(0x1a1a1a));
+        
+        const cyanLight = new THREE.PointLight(0x00FFFF, 20, 10);
+        cyanLight.position.set(-2, 3, 0);
+        scene.add(cyanLight);
+
+        const goldLight = new THREE.PointLight(0xFDCC0D, 15, 10);
+        goldLight.position.set(2, 0, 1);
+        scene.add(goldLight);
+
+        // Grid Floor
+        const grid = new THREE.GridHelper(40, 80, 0x32527B, 0x111111);
+        grid.position.y = 0;
+        scene.add(grid);
+
+        // Futuristic Pedestal
+        const pedestalGeo = new THREE.CylinderGeometry(0.7, 0.8, 0.1, 32);
+        const pedestalMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.2 });
+        const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
+        pedestal.position.set(0, 0.8, -1.5);
+        scene.add(pedestal);
+
+        // Neon Holographic Ring on Pedestal
+        const ringGeo = new THREE.TorusGeometry(0.7, 0.015, 16, 64);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x00FFFF });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.set(0, 0.85, -1.5);
+        ring.rotation.x = Math.PI / 2;
+        scene.add(ring);
+
+        // --- 3. LOAD THE SGX 3D MODEL ---
+        const productGroup = new THREE.Group();
+        productGroup.position.set(0, 1.8, -1.5); // Floating higher up, cool vibe
+        scene.add(productGroup);
+
+        // Setup Decoders for Web Compressed Models (Draco, KTX2, Meshopt)
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/');
+
+        const ktx2Loader = new KTX2Loader()
+            .setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/')
+            .detectSupport(renderer);
+
+        const gltfLoader = new GLTFLoader()
+            .setCrossOrigin('anonymous')
+            .setDRACOLoader(dracoLoader)
+            .setKTX2Loader(ktx2Loader)
+            .setMeshoptDecoder(MeshoptDecoder);
+
+        let loadedModel = null;
+
+        gltfLoader.load(
+            'https://static.wixstatic.com/3d/fe81a7_cf1ed4e58d0048efa955f39d347a9466.glb',
+            (gltf) => {
+                loadedModel = gltf.scene;
+
+                // Absolute Centering & Scaling Math
+                const box = new THREE.Box3().setFromObject(loadedModel);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3()).length();
+
+                // Center pivot
+                loadedModel.position.x += (loadedModel.position.x - center.x);
+                loadedModel.position.y += (loadedModel.position.y - center.y);
+                loadedModel.position.z += (loadedModel.position.z - center.z);
+
+                // Scale to perfectly fit the ~0.8m floating area
+                const scale = 0.8 / size; 
+                loadedModel.scale.set(scale, scale, scale);
+
+                productGroup.add(loadedModel);
+                
+                // Update HUD
+                document.getElementById('status-text').innerText = '> AWAITING VR INITIATION';
+            },
+            undefined,
+            (err) => console.error("Error loading Wix GLB:", err)
+        );
+
+        // --- 4. VR COMMERCE UI SYSTEM ---
+        let uiState = 'IDLE'; // IDLE, PROCESSING, SUCCESS
+        let isHovered = false;
+
+        const uiGeometry = new THREE.PlaneGeometry(1.2, 0.6);
+        const uiMaterial = new THREE.MeshBasicMaterial({ transparent: true });
+        const uiMesh = new THREE.Mesh(uiGeometry, uiMaterial);
+        
+        // Placed below the model so it doesn't obstruct the view of the cool 3D object
+        uiMesh.position.set(0, 1.1, -0.9); 
+        uiMesh.rotation.x = -Math.PI * 0.15; // Tilted slightly up for readability
+        scene.add(uiMesh);
+
+        function generateUITexture(state, hovered) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            // SGX Glass Panel Background
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.85)';
+            ctx.fillRect(0, 0, 1024, 512);
+
+            // 45-degree corner border logic
+            ctx.strokeStyle = hovered ? '#00FFFF' : '#32527B';
+            ctx.lineWidth = 12;
+            ctx.beginPath();
+            ctx.moveTo(40, 10);
+            ctx.lineTo(1014, 10);
+            ctx.lineTo(1014, 472);
+            ctx.lineTo(974, 502);
+            ctx.lineTo(10, 502);
+            ctx.lineTo(10, 40);
+            ctx.closePath();
+            ctx.stroke();
+
+            // Sci-fi scanlines effect inside UI
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
+            for(let i=0; i<512; i+=8) ctx.fillRect(0, i, 1024, 2);
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 50px Courier New';
+
+            if (state === 'IDLE') {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillText('ASSET: SGX EXOTIC ARTIFACT', 512, 120);
+                
+                ctx.fillStyle = '#FDCC0D';
+                ctx.font = 'bold 70px Courier New';
+                ctx.fillText('PRICE: 0.25 ETH', 512, 230);
+
+                // Button Area
+                ctx.fillStyle = hovered ? '#FDCC0D' : 'rgba(50, 82, 123, 0.5)';
+                ctx.beginPath();
+                ctx.moveTo(282, 330);
+                ctx.lineTo(762, 330);
+                ctx.lineTo(762, 430);
+                ctx.lineTo(742, 450);
+                ctx.lineTo(262, 450);
+                ctx.lineTo(262, 350);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.fillStyle = hovered ? '#050505' : '#00FFFF';
+                ctx.font = 'bold 50px Courier New';
+                ctx.fillText('AUTHORIZE PURCHASE', 512, 390);
+
+            } else if (state === 'PROCESSING') {
+                ctx.fillStyle = '#00FFFF';
+                ctx.fillText('ENCRYPTING TRANSACTION...', 512, 200);
+                
+                // Fake progress bar
+                ctx.fillStyle = 'rgba(50, 82, 123, 0.5)';
+                ctx.fillRect(212, 300, 600, 50);
+                ctx.fillStyle = '#FDCC0D';
+                ctx.fillRect(212, 300, 400 + Math.random() * 200, 50);
+
+            } else if (state === 'SUCCESS') {
+                ctx.fillStyle = '#00FFFF';
+                ctx.font = 'bold 70px Courier New';
+                ctx.fillText('TRANSACTION SUCCESSFUL', 512, 180);
+                
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '40px Courier New';
+                ctx.fillText('ASSET SECURED IN VAULT.', 512, 280);
+                
+                ctx.fillStyle = '#FDCC0D';
+                ctx.fillText('REDIRECTING TO SPATIALGINEERS...', 512, 400);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            uiMesh.material.map = texture;
+            uiMesh.material.needsUpdate = true;
         }
 
-        window.updateLayerScale = function(index) {
-            const l = layers[index];
-            l.scale = parseFloat(document.getElementById(`s-${l.id}`).value);
-            l.mesh.scale.set(l.scale, l.scale, 1);
-        }
+        // Initialize UI
+        generateUITexture(uiState, isHovered);
 
-        // --- 4. RAYCASTER DRAG & DROP ---
+        // --- 5. VR CONTROLLERS & RAYCASTING ---
+        const controller1 = renderer.xr.getController(0);
+        controller1.addEventListener('selectstart', onSelectStart);
+        scene.add(controller1);
+
+        const controller2 = renderer.xr.getController(1);
+        controller2.addEventListener('selectstart', onSelectStart);
+        scene.add(controller2);
+
+        const controllerModelFactory = new XRControllerModelFactory();
+        
+        const grip1 = renderer.xr.getControllerGrip(0);
+        grip1.add(controllerModelFactory.createControllerModel(grip1));
+        scene.add(grip1);
+
+        const grip2 = renderer.xr.getControllerGrip(1);
+        grip2.add(controllerModelFactory.createControllerModel(grip2));
+        scene.add(grip2);
+
+        // Laser pointers
+        const laserGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+        const laserMaterial = new THREE.LineBasicMaterial({ color: 0x00FFFF, blending: THREE.AdditiveBlending });
+        const laser1 = new THREE.Line(laserGeometry, laserMaterial);
+        laser1.scale.z = 5;
+        controller1.add(laser1);
+        
+        const laser2 = new THREE.Line(laserGeometry, laserMaterial);
+        laser2.scale.z = 5;
+        controller2.add(laser2);
+
+        // --- 6. LOGIC & STATE MACHINE ---
         const raycaster = new THREE.Raycaster();
-        const pointer = new THREE.Vector2();
-        let selectedMesh = null;
-        let dragOffset = new THREE.Vector3();
-        const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const tempMatrix = new THREE.Matrix4();
 
-        canvas.addEventListener('pointerdown', (event) => {
-            const rect = canvas.getBoundingClientRect();
-            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(meshGroup.children);
-            if (intersects.length > 0) {
-                intersects.sort((a, b) => b.object.renderOrder - a.object.renderOrder);
-                selectedMesh = intersects[0].object;
-                dragOffset.copy(selectedMesh.position).sub(intersects[0].point);
+        function onSelectStart(event) {
+            if (isHovered && uiState === 'IDLE') {
+                processPurchase();
             }
-        });
-
-        canvas.addEventListener('pointermove', (event) => {
-            if (!selectedMesh) return;
-            const rect = canvas.getBoundingClientRect();
-            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            raycaster.setFromCamera(pointer, camera);
-            const target = new THREE.Vector3();
-            dragPlane.constant = -selectedMesh.position.z; 
-            raycaster.ray.intersectPlane(dragPlane, target);
-            selectedMesh.position.x = target.x + dragOffset.x;
-            selectedMesh.position.y = target.y + dragOffset.y;
-        });
-
-        window.addEventListener('pointerup', () => { selectedMesh = null; });
-
-        function renderUI() {
-            const container = document.getElementById('layers-container');
-            container.innerHTML = '';
-            layers.forEach((layer, index) => {
-                const card = document.createElement('div');
-                card.className = 'layer-card';
-                card.innerHTML = `
-                    <div class="layer-header">
-                        <span>Layer ${index + 1}</span>
-                        <div class="order-btns">
-                            <button onclick="moveLayer(${index}, -1)">▼</button>
-                            <button onclick="moveLayer(${index}, 1)">▲</button>
-                            <button class="del-btn" onclick="removeLayer(${index})">X</button>
-                        </div>
-                    </div>
-                    <div class="layer-controls">
-                        <label>Escala</label>
-                        <input type="range" id="s-${layer.id}" min="0.1" max="4" step="0.05" value="${layer.scale}" oninput="updateLayerScale(${index})">
-                    </div>
-                `;
-                container.prepend(card); 
-            });
         }
 
-        function animate() {
-            requestAnimationFrame(animate);
-            renderer.render(scene, camera);
-        }
-        animate();
+        function processPurchase() {
+            uiState = 'PROCESSING';
+            generateUITexture(uiState, false);
 
-        // --- 5. EL COMPILADOR (SGX.System Engine) ---
-        function buildKioskApp() {
-            // Serializar el estado actual de los layers
-            const payload = layers.map(l => ({
-                url: l.url,
-                x: l.mesh.position.x,
-                y: l.mesh.position.y,
-                z: l.mesh.position.z,
-                scale: l.scale,
-                baseWidth: l.baseWidth,
-                imgAspect: l.imgAspect,
-                renderOrder: l.mesh.renderOrder
-            }));
+            // Simulate blockchain/network delay
+            setTimeout(() => {
+                uiState = 'SUCCESS';
+                generateUITexture(uiState, false);
 
-            const payloadString = JSON.stringify(payload);
+                // Redirect trigger
+                setTimeout(() => {
+                    window.top.location.href = 'https://spatialgineers.com';
+                }, 3000);
 
-            // Generar el HTML Standalone con lógica de captura inyectada
-            const buildHtml = `<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SGX Interactive Photobooth</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>
-    <style>
-        body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; touch-action: none; font-family: sans-serif; }
-        #app-container { position: relative; width: 100%; height: 100%; max-width: 500px; aspect-ratio: 9/16; background: #111; display: flex; justify-content: center; align-items: center; }
-        #input_video { position: absolute; opacity: 0; pointer-events: none; z-index: -10; }
-        canvas { width: 100%; height: 100%; object-fit: cover; }
-        
-        /* UI de Controles (Kiosk Mode) */
-        #controls { position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: center; gap: 20px; z-index: 100; pointer-events: none; }
-        .btn { width: 70px; height: 70px; border-radius: 50%; border: 4px solid #fff; cursor: pointer; pointer-events: auto; display: flex; justify-content: center; align-items: center; font-size: 24px; transition: transform 0.1s; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        .btn:active { transform: scale(0.9); }
-        #btn-photo { background: #FDCC0D; }
-        #btn-record { background: #ff3333; }
-        .recording { animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 51, 51, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(255, 51, 51, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 51, 51, 0); } }
-    </style>
-</head>
-<body>
-    <div id="app-container">
-        <video id="input_video" autoplay playsinline></video>
-        <canvas id="output_canvas"></canvas>
-        <div id="controls">
-            <div class="btn" id="btn-photo" onclick="takePhoto()">📸</div>
-            <div class="btn" id="btn-record" onclick="toggleRecord()">🔴</div>
-        </div>
-    </div>
-
-    <script>
-        // Inicializar Motor
-        const canvas = document.getElementById('output_canvas');
-        const renderer = new THREE.WebGLRenderer({ canvas: canvas, preserveDrawingBuffer: true, alpha: true });
-        
-        // Ajustar resolución dinámica
-        const container = document.getElementById('app-container');
-        renderer.setSize(container.clientWidth, container.clientHeight);
-        
-        const scene = new THREE.Scene();
-        const viewSize = 100;
-        const aspect = container.clientWidth / container.clientHeight;
-        const camera = new THREE.OrthographicCamera(-viewSize*aspect, viewSize*aspect, viewSize, -viewSize, 0.1, 1000);
-        camera.position.z = 10;
-
-        // Inyectar Cámara
-        const videoElement = document.getElementById('input_video');
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-            .then(stream => { videoElement.srcObject = stream; videoElement.play(); });
-
-        const videoTexture = new THREE.VideoTexture(videoElement);
-        videoTexture.center.set(0.5, 0.5);
-        videoTexture.repeat.set(-1, 1);
-        scene.background = videoTexture;
-
-        // Decodificar el Payload (Los assets de SGX Sandbox)
-        const assetsPayload = ${payloadString};
-        const loader = new THREE.TextureLoader();
-        loader.setCrossOrigin('anonymous');
-
-        assetsPayload.forEach(asset => {
-            loader.load(asset.url, (texture) => {
-                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false });
-                const geometry = new THREE.PlaneGeometry(asset.baseWidth, asset.baseWidth / asset.imgAspect);
-                const mesh = new THREE.Mesh(geometry, material);
-                
-                mesh.position.set(asset.x, asset.y, asset.z);
-                mesh.scale.set(asset.scale, asset.scale, 1);
-                mesh.renderOrder = asset.renderOrder;
-                scene.add(mesh);
-            });
-        });
-
-        // Loop de Render
-        function animate() {
-            requestAnimationFrame(animate);
-            renderer.render(scene, camera);
-        }
-        animate();
-
-        // Lógica de Captura
-        function takePhoto() {
-            const a = document.createElement('a');
-            a.href = canvas.toDataURL('image/png');
-            a.download = \`SGX_Capture_\${Date.now()}.png\`;
-            a.click();
+            }, 2500);
         }
 
-        let isRecording = false;
-        let mediaRecorder;
-        let recordedChunks = [];
+        function getIntersections(controller) {
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            return raycaster.intersectObject(uiMesh);
+        }
 
-        function toggleRecord() {
-            const btn = document.getElementById('btn-record');
-            if (!isRecording) {
-                const stream = canvas.captureStream(30);
-                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-                mediaRecorder.onstop = () => {
-                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = \`SGX_Video_\${Date.now()}.webm\`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    recordedChunks = [];
-                };
-                mediaRecorder.start();
-                isRecording = true;
-                btn.classList.add('recording');
-                btn.innerHTML = '⬛';
+        function updateRaycasting() {
+            // Zero Garbage Collection checks
+            if (uiState !== 'IDLE') return;
+
+            const intersects1 = getIntersections(controller1);
+            const intersects2 = getIntersections(controller2);
+
+            const currentlyHovered = (intersects1.length > 0 || intersects2.length > 0);
+
+            if (currentlyHovered && !isHovered) {
+                isHovered = true;
+                generateUITexture(uiState, isHovered);
+            } else if (!currentlyHovered && isHovered) {
+                isHovered = false;
+                generateUITexture(uiState, isHovered);
+            }
+        }
+
+        // --- 7. RENDER LOOP ---
+        window.addEventListener('resize', onWindowResize);
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        renderer.setAnimationLoop((time) => {
+            // Smooth Floating & Rotating Animation
+            if (loadedModel) {
+                loadedModel.rotation.y = time * 0.0003;
+            }
+            productGroup.position.y = 1.8 + Math.sin(time * 0.0015) * 0.06;
+
+            // Fake progress bar animation during processing
+            if (uiState === 'PROCESSING' && Math.random() > 0.8) {
+                generateUITexture(uiState, false);
+            }
+
+            // Update VR UI Interactions
+            if (renderer.xr.isPresenting) {
+                document.getElementById('hud').style.display = 'none';
+                updateRaycasting();
             } else {
-                mediaRecorder.stop();
-                isRecording = false;
-                btn.classList.remove('recording');
-                btn.innerHTML = '🔴';
+                document.getElementById('hud').style.display = 'block';
             }
-        }
-    <\/script>
-</body>
-</html>`;
 
-            // Ejecutar la descarga del archivo compilado
-            const blob = new Blob([buildHtml], { type: "text/html" });
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = `SGX_Photobooth_Release_${Date.now()}.html`;
-            a.click();
-        }
+            renderer.render(scene, camera);
+        });
+
     </script>
 </body>
 </html>
