@@ -26,6 +26,7 @@
             -webkit-backdrop-filter: blur(10px);
             padding: 15px;
             clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
+            transition: border-left-color 1s ease;
         }
         h2 {
             margin: 0 0 5px 0;
@@ -106,8 +107,14 @@
         scene.background = new THREE.Color(0x050505);
         scene.fog = new THREE.FogExp2(0x050505, 0.04);
 
+        // --- PLAYER RIG (For Free VR Locomotion & Fixing Spawn Height) ---
+        const playerRig = new THREE.Group();
+        playerRig.position.set(0, 0, 3.5); // Posición inicial
+        scene.add(playerRig);
+
         const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 1.6, 3.5); // Average human height
+        camera.position.set(0, 1.6, 0); // Average human height local to the rig
+        playerRig.add(camera); // Add camera to the rig
 
         // Habilitamos alpha: true para poder tener fondos transparentes en AR (Passthrough)
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", alpha: true });
@@ -190,6 +197,9 @@
             grid.visible = true;
             pedestal.visible = true;
             ring.visible = true;
+            
+            // Reset playerRig location just in case
+            playerRig.position.set(0, 0, 3.5);
         });
 
         // --- 3. LOAD THE SGX 3D MODEL ---
@@ -242,7 +252,7 @@
         );
 
         // --- 4. XR COMMERCE UI SYSTEM ---
-        let uiState = 'IDLE'; // IDLE, PROCESSING, SUCCESS
+        let uiState = 'IDLE'; // IDLE, PROCESSING, SUCCESS, VAULT
         let isHovered = false;
 
         const uiGeometry = new THREE.PlaneGeometry(1.2, 0.6);
@@ -265,7 +275,7 @@
             ctx.fillRect(0, 0, 1024, 512);
 
             // 45-degree corner border logic
-            ctx.strokeStyle = hovered ? '#00FFFF' : '#32527B';
+            ctx.strokeStyle = hovered ? '#00FFFF' : (state === 'VAULT' ? '#FDCC0D' : '#32527B');
             ctx.lineWidth = 12;
             ctx.beginPath();
             ctx.moveTo(40, 10);
@@ -278,7 +288,7 @@
             ctx.stroke();
 
             // Sci-fi scanlines effect inside UI
-            ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
+            ctx.fillStyle = state === 'VAULT' ? 'rgba(253, 204, 13, 0.05)' : 'rgba(0, 255, 255, 0.05)';
             for(let i=0; i<512; i+=8) ctx.fillRect(0, i, 1024, 2);
 
             ctx.textAlign = 'center';
@@ -307,7 +317,6 @@
                 ctx.fill();
                 
                 ctx.fillStyle = hovered ? '#050505' : '#00FFFF';
-                // Adjusted Font Size to fit cleanly within the button bounds
                 ctx.font = 'bold 40px Courier New';
                 ctx.fillText('AUTHORIZE PURCHASE', 512, 390);
 
@@ -329,10 +338,37 @@
                 
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = '40px Courier New';
-                ctx.fillText('ASSET SECURED IN VAULT.', 512, 280);
+                ctx.fillText('ASSET SECURED.', 512, 280);
                 
                 ctx.fillStyle = '#FDCC0D';
-                ctx.fillText('REDIRECTING TO SPATIALGINEERS...', 512, 400);
+                ctx.fillText('OPENING SGX VAULT...', 512, 400);
+
+            } else if (state === 'VAULT') {
+                ctx.font = 'bold 50px Courier New';
+                ctx.fillStyle = '#FDCC0D';
+                ctx.fillText('SGX SECURE VAULT', 512, 100);
+
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '35px Courier New';
+                ctx.fillText('ASSETS STORED: 1', 512, 180);
+                ctx.fillStyle = '#00FFFF';
+                ctx.fillText('• HIGHCOON HEAD [UNLOCKED]', 512, 240);
+
+                // Exit Button Area
+                ctx.fillStyle = hovered ? '#00FFFF' : 'rgba(184, 115, 51, 0.5)'; // Copper background
+                ctx.beginPath();
+                ctx.moveTo(212, 330);
+                ctx.lineTo(812, 330);
+                ctx.lineTo(812, 430);
+                ctx.lineTo(792, 450);
+                ctx.lineTo(192, 450);
+                ctx.lineTo(192, 350);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = hovered ? '#050505' : '#FDCC0D';
+                ctx.font = 'bold 35px Courier New';
+                ctx.fillText('EXIT TO SPATIALGINEERS.COM', 512, 390);
             }
 
             const texture = new THREE.CanvasTexture(canvas);
@@ -346,21 +382,23 @@
         // --- 5. VR/AR CONTROLLERS & RAYCASTING ---
         const controller1 = renderer.xr.getController(0);
         controller1.addEventListener('selectstart', onSelectStart);
-        scene.add(controller1);
+        controller1.addEventListener('selectend', onSelectEnd);
+        playerRig.add(controller1); // ADD TO PLAYER RIG
 
         const controller2 = renderer.xr.getController(1);
         controller2.addEventListener('selectstart', onSelectStart);
-        scene.add(controller2);
+        controller2.addEventListener('selectend', onSelectEnd);
+        playerRig.add(controller2); // ADD TO PLAYER RIG
 
         const controllerModelFactory = new XRControllerModelFactory();
         
         const grip1 = renderer.xr.getControllerGrip(0);
         grip1.add(controllerModelFactory.createControllerModel(grip1));
-        scene.add(grip1);
+        playerRig.add(grip1); // ADD TO PLAYER RIG
 
         const grip2 = renderer.xr.getControllerGrip(1);
         grip2.add(controllerModelFactory.createControllerModel(grip2));
-        scene.add(grip2);
+        playerRig.add(grip2); // ADD TO PLAYER RIG
 
         // Laser pointers
         const laserGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
@@ -377,13 +415,18 @@
         const raycaster = new THREE.Raycaster();
         const tempMatrix = new THREE.Matrix4();
 
+        // Object Grab State
+        let isDraggingVR = false;
+        let activeController = null;
+        const previousControllerPos = new THREE.Vector3();
+
         // --- DESKTOP/TOUCH FALLBACK RAYCASTING ---
         const mouse = new THREE.Vector2();
         const mouseRaycaster = new THREE.Raycaster();
 
         window.addEventListener('pointermove', (event) => {
-            // Ignorar si estamos en VR/AR o si no estamos en la pantalla inicial
-            if (renderer.xr.isPresenting || uiState !== 'IDLE') return;
+            // Ignorar si estamos en VR/AR o si la transacción está en progreso
+            if (renderer.xr.isPresenting || uiState === 'PROCESSING' || uiState === 'SUCCESS') return;
 
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -405,8 +448,8 @@
         });
 
         window.addEventListener('pointerdown', (event) => {
-            // Ignorar si estamos en VR/AR o si no estamos en la pantalla inicial
-            if (renderer.xr.isPresenting || uiState !== 'IDLE') return;
+            // Ignorar si estamos en VR/AR o si la transacción está en progreso
+            if (renderer.xr.isPresenting || uiState === 'PROCESSING' || uiState === 'SUCCESS') return;
 
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -415,14 +458,51 @@
             const intersects = mouseRaycaster.intersectObject(uiMesh);
 
             if (intersects.length > 0) {
-                processPurchase();
+                if (uiState === 'IDLE') {
+                    processPurchase();
+                } else if (uiState === 'VAULT') {
+                    executeExit();
+                }
             }
         });
         // --- FIN FALLBACK ---
 
+        function getIntersectionsObjects(controller, objects) {
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            return raycaster.intersectObjects(objects, true);
+        }
+
         function onSelectStart(event) {
-            if (isHovered && uiState === 'IDLE') {
-                processPurchase();
+            const controller = event.target;
+            
+            // First check if clicking the UI Panel
+            const uiIntersects = getIntersectionsObjects(controller, [uiMesh]);
+            if (uiIntersects.length > 0) {
+                if (uiState === 'IDLE' && isHovered) {
+                    processPurchase();
+                } else if (uiState === 'VAULT' && isHovered) {
+                    executeExit();
+                }
+                return;
+            }
+
+            // If in Vault, check if grabbing the 3D Product to inspect it freely
+            if (uiState === 'VAULT') {
+                const productIntersects = getIntersectionsObjects(controller, [productGroup]);
+                if (productIntersects.length > 0) {
+                    isDraggingVR = true;
+                    activeController = controller;
+                    previousControllerPos.copy(controller.position);
+                }
+            }
+        }
+
+        function onSelectEnd(event) {
+            if (activeController === event.target) {
+                isDraggingVR = false;
+                activeController = null;
             }
         }
 
@@ -435,31 +515,42 @@
                 uiState = 'SUCCESS';
                 generateUITexture(uiState, false);
 
-                // Redirect trigger
+                // Transition to VAULT Mode
                 setTimeout(() => {
-                    try {
-                        window.location.href = 'https://spatialgineers.com';
-                    } catch(e) {
-                        console.error('Redirection error:', e);
+                    uiState = 'VAULT';
+                    generateUITexture(uiState, false);
+
+                    // Transform environment colors to represent the Vault
+                    grid.material.color.setHex(0xFDCC0D); // Gold Grid
+                    cyanLight.color.setHex(0xB87333); // Copper atmospheric lighting
+                    ringMat.color.setHex(0xFDCC0D); // Gold Pedestal Ring
+                    
+                    const hudBorder = document.getElementById('hud');
+                    if (hudBorder) hudBorder.style.borderLeftColor = '#FDCC0D';
+
+                    const statusText = document.getElementById('status-text');
+                    if (statusText) {
+                        statusText.style.color = '#FDCC0D';
+                        statusText.innerText = '> SGX VAULT UNLOCKED. INSPECTION MODE ACTIVE.';
                     }
                 }, 3000);
 
             }, 2500);
         }
 
-        function getIntersections(controller) {
-            tempMatrix.identity().extractRotation(controller.matrixWorld);
-            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-            return raycaster.intersectObject(uiMesh);
+        function executeExit() {
+            try {
+                window.location.href = 'https://spatialgineers.com';
+            } catch(e) {
+                console.error('Redirection error:', e);
+            }
         }
 
         function updateRaycasting() {
-            // Zero Garbage Collection checks
-            if (uiState !== 'IDLE') return;
+            if (uiState === 'PROCESSING' || uiState === 'SUCCESS') return;
 
-            const intersects1 = getIntersections(controller1);
-            const intersects2 = getIntersections(controller2);
+            const intersects1 = getIntersectionsObjects(controller1, [uiMesh]);
+            const intersects2 = getIntersectionsObjects(controller2, [uiMesh]);
 
             const currentlyHovered = (intersects1.length > 0 || intersects2.length > 0);
 
@@ -472,6 +563,45 @@
             }
         }
 
+        // --- LOCOMOTION HANDLING ---
+        function handleLocomotion() {
+            const session = renderer.xr.getSession();
+            if (!session || !session.inputSources) return;
+
+            for (const source of session.inputSources) {
+                if (source.gamepad) {
+                    const axes = source.gamepad.axes;
+                    let xAxis = 0, yAxis = 0;
+
+                    // Typical WebXR thumbstick mapping (Axes 2 & 3 or 0 & 1)
+                    if (axes.length >= 4) {
+                        xAxis = axes[2];
+                        yAxis = axes[3];
+                    } else if (axes.length >= 2) {
+                        xAxis = axes[0];
+                        yAxis = axes[1];
+                    }
+
+                    const deadzone = 0.15;
+                    if (Math.abs(xAxis) > deadzone || Math.abs(yAxis) > deadzone) {
+                        // Obtener la dirección real hacia la que miras con la cámara
+                        const quaternion = new THREE.Quaternion();
+                        camera.getWorldQuaternion(quaternion);
+
+                        // Calcular vectores de movimiento libres
+                        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+                        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+
+                        const moveSpeed = 0.05;
+
+                        // Mover el Player Rig completo
+                        playerRig.position.addScaledVector(forward, -yAxis * moveSpeed);
+                        playerRig.position.addScaledVector(right, xAxis * moveSpeed);
+                    }
+                }
+            }
+        }
+
         // --- 7. RENDER LOOP ---
         window.addEventListener('resize', onWindowResize);
         function onWindowResize() {
@@ -481,21 +611,33 @@
         }
 
         renderer.setAnimationLoop((time) => {
-            // Smooth Floating & Rotating Animation
-            if (loadedModel) {
-                loadedModel.rotation.y = time * 0.0003;
-            }
+            // Floating Product Logic & VR Free Interaction
             productGroup.position.y = 1.8 + Math.sin(time * 0.0015) * 0.06;
+
+            if (isDraggingVR && activeController) {
+                // Manipulate product rotation freely with VR hand movement delta
+                const deltaX = activeController.position.x - previousControllerPos.x;
+                const deltaY = activeController.position.y - previousControllerPos.y;
+                
+                productGroup.rotation.y += deltaX * 15;
+                productGroup.rotation.x += deltaY * 15;
+                
+                previousControllerPos.copy(activeController.position);
+            } else {
+                // Auto-rotate gracefully when untouched
+                productGroup.rotation.y += 0.003;
+            }
 
             // Fake progress bar animation during processing
             if (uiState === 'PROCESSING' && Math.random() > 0.8) {
                 generateUITexture(uiState, false);
             }
 
-            // Update VR UI Interactions
+            // Update VR UI Interactions & Free Movement
             if (renderer.xr.isPresenting) {
                 document.getElementById('hud').style.display = 'none';
                 updateRaycasting();
+                handleLocomotion(); // Fly freely via Thumbsticks
             } else {
                 document.getElementById('hud').style.display = 'block';
             }
