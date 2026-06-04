@@ -45,6 +45,7 @@
         @keyframes blinker {
             50% { opacity: 0; }
         }
+        
         /* Style VR Button to match SGX Brand */
         #VRButton {
             background: rgba(50, 82, 123, 0.8) !important;
@@ -54,6 +55,21 @@
             font-weight: bold !important;
             text-transform: uppercase !important;
             box-shadow: 0 0 15px rgba(0, 255, 255, 0.3) !important;
+            left: calc(50% - 120px) !important;
+            width: 110px !important;
+        }
+
+        /* Style AR Button to match SGX Brand */
+        #ARButton {
+            background: rgba(50, 82, 123, 0.8) !important;
+            border: 1px solid #FDCC0D !important;
+            color: #FDCC0D !important;
+            font-family: 'Courier New', monospace !important;
+            font-weight: bold !important;
+            text-transform: uppercase !important;
+            box-shadow: 0 0 15px rgba(253, 204, 13, 0.3) !important;
+            left: calc(50% + 10px) !important;
+            width: 110px !important;
         }
     </style>
 </head>
@@ -75,6 +91,7 @@
 
     <script type="module">
         import * as THREE from 'three';
+        import { ARButton } from 'three/addons/webxr/ARButton.js';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
         import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -92,7 +109,8 @@
         const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 1.6, 3.5); // Average human height
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        // Habilitamos alpha: true para poder tener fondos transparentes en AR (Passthrough)
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.xr.enabled = true; // ENABLING WEBXR
@@ -100,9 +118,11 @@
         renderer.toneMappingExposure = 1.0;
         document.body.appendChild(renderer.domElement);
 
+        // Añadimos ambos botones al entorno
         document.body.appendChild(VRButton.createButton(renderer));
+        document.body.appendChild(ARButton.createButton(renderer));
 
-        // Controls for desktop preview before entering VR
+        // Controls for desktop preview before entering VR/AR
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.target.set(0, 1.4, -1.5);
         controls.update();
@@ -141,6 +161,37 @@
         ring.rotation.x = Math.PI / 2;
         scene.add(ring);
 
+        // --- 2.5 ENVIRONMENT TOGGLER (FOR AR/VR XR MODES) ---
+        renderer.xr.addEventListener('sessionstart', () => {
+            const session = renderer.xr.getSession();
+            
+            // Evaluamos el tipo de sesión para apagar/encender el entorno
+            if (session && session.mode === 'immersive-ar') {
+                // Eliminar entorno virtual para dejar pasar la cámara real (Passthrough AR)
+                scene.background = null;
+                scene.fog = null;
+                grid.visible = false;
+                pedestal.visible = false;
+                ring.visible = false;
+            } else {
+                // Mantener el entorno virtual para la inmersión total (VR)
+                scene.background = new THREE.Color(0x050505);
+                scene.fog = new THREE.FogExp2(0x050505, 0.04);
+                grid.visible = true;
+                pedestal.visible = true;
+                ring.visible = true;
+            }
+        });
+
+        renderer.xr.addEventListener('sessionend', () => {
+            // Restaurar entorno virtual al volver a escritorio/móvil
+            scene.background = new THREE.Color(0x050505);
+            scene.fog = new THREE.FogExp2(0x050505, 0.04);
+            grid.visible = true;
+            pedestal.visible = true;
+            ring.visible = true;
+        });
+
         // --- 3. LOAD THE SGX 3D MODEL ---
         const productGroup = new THREE.Group();
         productGroup.position.set(0, 1.8, -1.5); // Floating higher up, cool vibe
@@ -177,20 +228,20 @@
                 loadedModel.position.y += (loadedModel.position.y - center.y);
                 loadedModel.position.z += (loadedModel.position.z - center.z);
 
-                // Scale to perfectly fit the ~0.8m floating area
+                // Scale adjusted to 1.2 as requested
                 const scale = 1.2 / size; 
                 loadedModel.scale.set(scale, scale, scale);
 
                 productGroup.add(loadedModel);
                 
                 // Update HUD
-                document.getElementById('status-text').innerText = '> AWAITING VR INITIATION';
+                document.getElementById('status-text').innerText = '> AWAITING XR INITIATION';
             },
             undefined,
             (err) => console.error("Error loading Wix GLB:", err)
         );
 
-        // --- 4. VR COMMERCE UI SYSTEM ---
+        // --- 4. XR COMMERCE UI SYSTEM ---
         let uiState = 'IDLE'; // IDLE, PROCESSING, SUCCESS
         let isHovered = false;
 
@@ -232,11 +283,12 @@
 
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.font = 'bold 50px Courier New';
 
             if (state === 'IDLE') {
+                ctx.font = 'bold 50px Courier New';
                 ctx.fillStyle = '#FFFFFF';
-                ctx.fillText('ASSET: Highcoon Head', 512, 120);
+                // Updated Asset Name
+                ctx.fillText('ASSET: HIGHCOON HEAD', 512, 120);
                 
                 ctx.fillStyle = '#FDCC0D';
                 ctx.font = 'bold 70px Courier New';
@@ -255,10 +307,12 @@
                 ctx.fill();
                 
                 ctx.fillStyle = hovered ? '#050505' : '#00FFFF';
-                ctx.font = 'bold 50px Courier New';
-                ctx.fillText('PURCHASE', 512, 390);
+                // Adjusted Font Size to fit cleanly within the button bounds
+                ctx.font = 'bold 40px Courier New';
+                ctx.fillText('AUTHORIZE PURCHASE', 512, 390);
 
             } else if (state === 'PROCESSING') {
+                ctx.font = 'bold 50px Courier New';
                 ctx.fillStyle = '#00FFFF';
                 ctx.fillText('ENCRYPTING TRANSACTION...', 512, 200);
                 
@@ -289,7 +343,7 @@
         // Initialize UI
         generateUITexture(uiState, isHovered);
 
-        // --- 5. VR CONTROLLERS & RAYCASTING ---
+        // --- 5. VR/AR CONTROLLERS & RAYCASTING ---
         const controller1 = renderer.xr.getController(0);
         controller1.addEventListener('selectstart', onSelectStart);
         scene.add(controller1);
@@ -328,7 +382,7 @@
         const mouseRaycaster = new THREE.Raycaster();
 
         window.addEventListener('pointermove', (event) => {
-            // Ignorar si estamos en VR o si no estamos en la pantalla inicial
+            // Ignorar si estamos en VR/AR o si no estamos en la pantalla inicial
             if (renderer.xr.isPresenting || uiState !== 'IDLE') return;
 
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -351,7 +405,7 @@
         });
 
         window.addEventListener('pointerdown', (event) => {
-            // Ignorar si estamos en VR o si no estamos en la pantalla inicial
+            // Ignorar si estamos en VR/AR o si no estamos en la pantalla inicial
             if (renderer.xr.isPresenting || uiState !== 'IDLE') return;
 
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -383,7 +437,11 @@
 
                 // Redirect trigger
                 setTimeout(() => {
-                    window.open('https://spatialgineers.com', '_blank');
+                    try {
+                        window.location.href = 'https://spatialgineers.com';
+                    } catch(e) {
+                        console.error('Redirection error:', e);
+                    }
                 }, 3000);
 
             }, 2500);
